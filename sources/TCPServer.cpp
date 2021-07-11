@@ -397,7 +397,7 @@
 		return this->server->isConnected(this);
 	}
 
-	void TCPServerLib::ClientInfo::disconnect(ClientInfo *client)
+	void TCPServerLib::ClientInfo::disconnect()
 	{
 		this->server->disconnect(this);
 	}

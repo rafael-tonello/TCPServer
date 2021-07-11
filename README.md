@@ -1,5 +1,5 @@
 # Event TCPServer Library
-An event based TCP Server. This server do not use async I/O yet or LibEvent. I wrote this code to be compiled in a system that does't support LibEvent.
+Thi is an event based TCP Server. This server do not use async I/O yet or LibEvent. I wrote this code to be compiled in a system that does't support LibEvent.
 
 # Using
 To Use this library, you can copy the .cpp and .h files to your project or add this repository as a submodule of your project.
@@ -59,7 +59,9 @@ void startMyServer(){
     //add an event to be called when some data cames from the client. Is
     //very similiar to addReceiveListener method, but this receives the
     //data as a string
-    server.addReceiveListener([](ClientInfo* client, string data){
+    //
+    //OBS: addReceiveListener_s is executed after addReceiveListener (both on the ClientInfo and TCPServer objects)
+    server.addReceiveListener_s([](ClientInfo* client, string data){
         cout << "Received from client "<< data << endl;
 
         //you can also send a response as a string to the client
@@ -67,6 +69,43 @@ void startMyServer(){
 
         //again: you can also use directly the client object to send the response
         client->sendString(client, "OK, I received your data");
+
+        //you can disconnect your client:
+        server.disconnect(client);
+    });
+}
+```
+
+Bellow, you can see an example using directly the ClientInfo object, and user the TCPServer object just to handle the incoming clients
+
+```c++
+#include <iostream>
+#include "libs/TCPServer/sources/TCPServer.h"
+
+using namespace std;
+void startMyServer(){
+
+    //starts the server
+    TCPServer server({5000, 5001});
+
+
+
+    //add an event (a lambda function) to know when clients connects or
+    //disconnects from your server
+    server.addConEventListeners([](ClientInfo *client, CONN_EVENT event){
+        if (event == CONN_EVENT::CONNECTED)
+        {
+            cout << "A client was connect in the server" << endl;
+            client->addReceiveListener_s([](ClientInfo* clientp2, string data){
+                cout << "Received from client the data: " << data << endl;
+                clientp2->sendString("Ok, I received your data");
+
+                //you can disconnect the client
+                clientp2->disconnect();
+            });
+        }
+        else
+            cout << "A client was disconnect in the server" << endl;
     });
 }
 ```

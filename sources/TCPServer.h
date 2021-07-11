@@ -12,7 +12,7 @@
 #include <pthread.h>
 #include <iostream>
 #include <vector>
-#include "../ThreadPool/ThreadPool.h"
+#include "ThreadPool/ThreadPool.h"
 #include <sstream>
 #pragma region include for networking
     #include <sys/types.h>
@@ -65,15 +65,18 @@ namespace TCPServerLib
 
             int socket;
             mutex writeMutex;
-            ClientInfo();
             TCPServer *server;
-            ClientInfo(TCPServer *server);
             void sendData(char* data, size_t size);
             void sendString(string data);
             bool isConnected();
-            void disconnect(ClientInfo *client);
+            void disconnect();
 
             atomic<bool> __reading;
+
+            ClientInfo(TCPServer *server)
+            {
+                this->server = server;
+            }
 
             ClientInfo(){
                 __reading = false;
@@ -84,7 +87,7 @@ namespace TCPServerLib
 
     class TCPServer: SocketHelper{
         private:
-            const int _CONF_MAX_READ_IN_A_TASK = 5242800;
+            const int _CONF_MAX_READ_IN_A_TASK = 10485760;
             const int _CONF_DEFAULT_LOOP_WAIT = 1000;
             const int _CONF_READ_BUFFER_SIZE = 10240;
 

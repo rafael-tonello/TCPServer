@@ -8,7 +8,9 @@
 #include <arpa/inet.h>
 #include "../../sources/TCPServer.h"
 
-class TCPServerTester: public Tester, public API::ApiMediatorInterface{
+
+
+class TCPServerTester: public Tester{
 public:
     vector<string> getContexts();
     void run(string context);

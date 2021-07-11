@@ -4,56 +4,35 @@
 PROJ_NAME=tests
 # .c files
 #test app files
-C_SOURCE=$(wildcard ./source/*.cpp)
-C_SOURCE+=$(wildcard ./source/Services/APIs/PHOMAU/*.cpp)
-C_SOURCE+=$(wildcard ./source/Controller/*.cpp)
-C_SOURCE+=$(wildcard ./source/Shared/DependencyInjectionManager/*.cpp)
+C_SOURCE=$(wildcard ./sources/*.cpp)
 
 #main app files
-C_SOURCE+=$(wildcard ../source/Controller/*.cpp)
-C_SOURCE+=$(wildcard ../source/Services/APIs/PHOMAU/*.cpp)
-C_SOURCE+=$(wildcard ../source/Services/VarSystem/*.cpp)
-C_SOURCE+=$(wildcard ../source/Shared/Misc/*.cpp)
-C_SOURCE+=$(wildcard ../source/Shared/ThreadPool/*.cpp)
-C_SOURCE+=$(wildcard ../source/Shared/DependencyInjectionManager/*.cpp)
+C_SOURCE+=$(wildcard ../sources/*.cpp)
+C_SOURCE+=$(wildcard ../sources/ThreadPool/*.cpp)
  
 # .h files
 #test app files
-H_SOURCE=$(wildcard ./source/*.h)
-H_SOURCE+=$(wildcard ./source/Services/APIs/PHOMAU/*.h)
-H_SOURCE+=$(wildcard ./source/Controller/*.h)
-H_SOURCE+=$(wildcard ./source/Shared/DependencyInjectionManager/*.h)
+H_SOURCE=$(wildcard ./sources/*.h)
 
 #main app files
-H_SOURCE+=$(wildcard ../source/Controller/*.h)
-H_SOURCE+=$(wildcard ../source/Services/APIs/PHOMAU/*.h)
-H_SOURCE+=$(wildcard ../source/Services/VarSystem/*.h)
-H_SOURCE+=$(wildcard ../source/Shared/Misc/*.h)
-H_SOURCE+=$(wildcard ../source/Shared/ThreadPool/*.h)
-H_SOURCE+=$(wildcard ../source/Shared/DependencyInjectionManager/*.h)
+H_SOURCE+=$(wildcard ../sources/*.h)
+H_SOURCE+=$(wildcard ../sources/ThreadPool/*.h)
 
 objFolder:
-	@ mkdir -p objects/tests/
-	@ mkdir -p objects/tests/Services/APIs/PHOMAU
-	@ mkdir -p objects/tests/Controller
-	@ mkdir -p objects/tests/Shared/DependencyInjectionManager
+	@ mkdir -p objects/tests
 #	the main app directories
-	@ mkdir -p objects/main/Controller
-	@ mkdir -p objects/main/Services/APIs/PHOMAU
-	@ mkdir -p objects/main/Services/VarSystem
-	@ mkdir -p objects/main/Shared/Misc
-	@ mkdir -p objects/main/Shared/ThreadPool
-	@ mkdir -p objects/main/Shared/DependencyInjectionManager
+	@ mkdir -p objects/main
+	@ mkdir -p objects/main/ThreadPool
 	
 	
 
 prebuild:
 # 	prepares the folder built/gui. This folder contains files copied from GUI/resources. These files contains the HTML5 User interface.
 	@ mkdir ./build | true
-	@ cp -r ./source/copyToBuildFolder/* ./build | true
+	@ cp -r ./sources/copyToBuildFolder/* ./build | true
  
 # Object files
-OBJ=$(subst .cpp,.o,$(subst ./source,./objects/tests,$(subst ../source,./objects/main,$(C_SOURCE))))
+OBJ=$(subst .cpp,.o,$(subst ./sources,./objects/tests,$(subst ../sources,./objects/main,$(C_SOURCE))))
  
 # Compiler and linker
 CC=g++
@@ -70,7 +49,7 @@ CC_FLAGS=-c			\
 		 -g			\
 		 -D__TESTING__ \
 		 -std=c++17 \
-		 -I"./source/"
+		 -I"./sources/"
 
 # Flags for linker
 LK_FLAGS=-W         \
@@ -83,7 +62,7 @@ LK_FLAGS=-W         \
 		 -g			\
 		 -D__TESTING__ \
 		 -std=c++17 \
-		 -I"./source/"
+		 -I"./sources/"
  
 # Command used at clean target
 RM = rm -rf
@@ -99,17 +78,17 @@ $(PROJ_NAME): $(OBJ)
 	@ echo 'Finished building binary: $@'
 	@ echo ' '
  
-./objects/main/%.o: ../source/%.cpp ../source/%.h
+./objects/main/%.o: ../sources/%.cpp ../sources/%.h
 	@ echo 'Building target using GCC compiler: $<'
 	$(CC) $< $(CC_FLAGS) -o $@
 	@ echo ' '
 
-./objects/tests/%.o: ./source/%.cpp ./source/%.h
+./objects/tests/%.o: ./sources/%.cpp ./sources/%.h
 	@ echo 'Building target using GCC compiler: $<'
 	$(CC) $< $(CC_FLAGS) -o $@
 	@ echo ' '
  
-./objects/tests/main.o: ./source/main.cpp $(H_SOURCE)
+./objects/tests/main.o: ./sources/main.cpp $(H_SOURCE)
 	@ echo 'Building target using GCC compiler: $<'
 	$(CC) $< $(CC_FLAGS) -o $@
 	@ echo ' '
