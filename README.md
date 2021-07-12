@@ -5,14 +5,14 @@ Thi is an event based TCP Server. This server do not use async I/O yet or LibEve
 To Use this library, you can copy the .cpp and .h files to your project or add this repository as a submodule of your project.
 
 # Where is the main.cpp?
-This project is a library, so I don't provide a main file to test it. Instead, I wrote a projet to do unity testes in the classes and function.
-You can enter in the folder 'tests' and run the command 'make all'. After run this command, a file located in testes/build, named 'tests' will
-be generated. This file (tests) is a binary file that run some unit tests. 
+This project is a library, so I don't provide a main file to test it. Instead, I wrote a projet to do unity tests in the classes and function.
+You can enter in the folder 'tests' and run the command 'make all'. After run this command, a file located in tests/build, named 'tests', will
+be generated. This file (tests/build/tests) is a binary file that run some tests. 
 
 Along with this code, there is a ".vscode" folder that contains some configurations for the Visual Studio Code. If you use VSCode, you can compile the tests program direclty from the 'Debug' section of this IDE.
 
 # dependencies
-This library depends of a thread pool librafy, that was write for me. If you make a recursive git clone of this projeto, you shouldn't have problem with this dependecy. But if you choose to clone allow the repository, you should also clone this thread pool library and adjust the include int the 'TCPServer.h' file.
+This library depends of a thread pool libraty, that was written by me. If you make a recursive git clone of this project, you shouldn't have problema with this dependency. But if you choose to clone allow the repository, you should also clone this thread pool library and adjust the include int the 'TCPServer.h' file.
 
 The trhead pool library is in: https://github.com/rafinhatonello/ThreadPool
 
