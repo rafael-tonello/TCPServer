@@ -61,7 +61,8 @@ void startMyServer(){
     //very similiar to addReceiveListener method, but this receives the
     //data as a string
     //
-    //OBS: addReceiveListener_s is executed after addReceiveListener (both on the ClientInfo and TCPServer objects)
+    //OBS: addReceiveListener_s is executed after addReceiveListener (both
+    // on the ClientInfo and TCPServer objects)
     server.addReceiveListener_s([](ClientInfo* client, string data){
         cout << "Received from client "<< data << endl;
 
