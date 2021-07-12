@@ -80,10 +80,12 @@
 
 			this->__tasks = tasker;
 
+			int numStarted = 0;
+
 			for (auto &p: ports)
 			{
-				thread *th = new thread([this,p](){
-					this->waitClients(p);
+				thread *th = new thread([&](){
+					this->waitClients(p, [&](bool sucess){ numStarted++;});
 				});
 
 				
@@ -98,9 +100,13 @@
 			});
 
 			th2->detach();
+
+			//wait for sockets initialization
+			while (numStarted < ports.size())
+				usleep(100);
 		}
 
-		void TCPServerLib::TCPServer::waitClients(int port)
+		void TCPServerLib::TCPServer::waitClients(int port, function<void(bool sucess)> onStartingFinish)
 		{
 			//create an socket to await for connections
 
@@ -137,6 +143,7 @@
 					{
 
 						clientSize = sizeof(cli_addr);
+						onStartingFinish(true);
 
 						while (true)
 						{
@@ -163,13 +170,22 @@
 						}
 					}
 					else
+					{
 						this->debug("Failure to open socket");
+						onStartingFinish(false);
+					}
 				}
 				else
+				{
 					this->debug("Failure to start socket system");
+					onStartingFinish(false);
+				}
 			}
 			else
+			{
 				this->debug("General error opening socket");
+				onStartingFinish(false);
+			}
 
 				//n = read(newsockfd,buffer,255);
 				//n = write(newsockfd,"I got your message",18);

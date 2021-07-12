@@ -11,6 +11,9 @@
 
 
 class TCPServerTester: public Tester{
+private:
+    ThreadPool th;
+    future<int> connectToServcer(string host, int port);
 public:
     vector<string> getContexts();
     void run(string context);

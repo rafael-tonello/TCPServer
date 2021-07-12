@@ -36,6 +36,9 @@ namespace TCPServerLib
 
     class SocketHelper{
         protected:
+            #ifdef __TESTING__
+                public: 
+            #endif
             vector<function<void(ClientInfo *client, char* data,  size_t size)>> receiveListeners;
             vector<function<void(ClientInfo *client, string data)>> receiveListeners_s;
             vector<function<void(ClientInfo *client, CONN_EVENT event)>> connEventsListeners;
@@ -87,6 +90,9 @@ namespace TCPServerLib
 
     class TCPServer: SocketHelper{
         private:
+        #ifdef __TESTING__
+            public: 
+        #endif
             const int _CONF_MAX_READ_IN_A_TASK = 10485760;
             const int _CONF_DEFAULT_LOOP_WAIT = 1000;
             const int _CONF_READ_BUFFER_SIZE = 10240;
@@ -101,7 +107,7 @@ namespace TCPServerLib
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
             void initialize(vector<int> ports, ThreadPool *tasker = NULL);
-            void waitClients(int port);
+            void waitClients(int port, function<void(bool sucess)> onStartingFinish);
             void debug(string msg){cout << "Debug: " << msg << endl;}
             void chatWithClient(ClientInfo *client);
             bool __SocketIsConnected( int socket);

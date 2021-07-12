@@ -25,6 +25,7 @@ See some examples of how you can use this library.
 #include "libs/TCPServer/sources/TCPServer.h"
 
 using namespace std;
+using namespace TCPServerLib;
 void startMyServer(){
 
     //starts the server
@@ -83,6 +84,7 @@ Bellow, you can see an example using directly the ClientInfo object, and user th
 #include "libs/TCPServer/sources/TCPServer.h"
 
 using namespace std;
+using namespace TCPServerLib;
 void startMyServer(){
 
     //starts the server
@@ -112,3 +114,4 @@ void startMyServer(){
 
 # Main task List
 charaters to be used ✔ ✘
+ 
