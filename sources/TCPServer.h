@@ -46,7 +46,7 @@ namespace TCPServerLib
             map<int, function<void(ClientInfo *client, CONN_EVENT event)>> connEventsListeners;
         public:
             int socketHandle;
-            map<string, void*> tags;
+            map<string, string> tags;
 
             int addReceiveListener(function<void(ClientInfo *client, char* data,  size_t size)> onReceive);
             void removeListener(int id);
