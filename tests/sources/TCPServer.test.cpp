@@ -29,9 +29,104 @@ void TCPServerTester::run(string context)
             };
         });
 
+        this->test("Server should receive packs from a client", [&](){
+            string receivedData;
+            string message = "This is a message to be received by the server.";
+            mutex serverWait;
+            serverWait.lock();
+            int observerId = server.addReceiveListener_s([&](ClientInfo* cli, string data){
+                receivedData = data;
+                serverWait.unlock();
+            });
+
+            //connect to the server
+            int theClient = this->connectToServcer("127.0.0.1", 5002).get();
+
+            //send a pack
+            auto start = std::chrono::system_clock::now();
+            send(theClient, message.c_str(), message.size(), 0);
+
+            //await for recception by the server
+            serverWait.lock();
+            auto end = std::chrono::system_clock::now();
+
+            std::chrono::nanoseconds duration = end - start;
+            this->blueMessage("Total pack travel time: " + to_string(duration.count()/1000.f/1000.f) + " milisseconds");
+            //check the results
+
+            server.removeListener_s(observerId);
+
+            return TestResult{
+                receivedData == message,
+                message,
+                receivedData
+            };
+        });
+
+        //test write from server
+        this->test("Client should receive packs from the server", [&](){
+            string message = "This message go to the server and cames back to the client.";
+            
+            auto observerId = server.addReceiveListener_s([&](ClientInfo* cli, string data){
+                //send pack back to the client
+                cli->sendString(data);
+            });
+
+            //connect to the server
+            int theClient = this->connectToServcer("127.0.0.1", 5002).get();
+
+            //send a pack
+            auto start = std::chrono::system_clock::now();
+            send(theClient, message.c_str(), message.size(), 0);
+
+            string comeBackFromTheSocket = readSocket(theClient, 1000).get();
+
+            //await for recception by the server
+            auto end = std::chrono::system_clock::now();
+            std::chrono::nanoseconds duration = end - start;
+            this->blueMessage("Total pack travel time: " + to_string(duration.count()/1000.f/1000.f) + " milisseconds");
+            //check the results
+
+            server.removeListener_s(observerId);
+
+            return TestResult{
+                comeBackFromTheSocket == message,
+                message,
+                comeBackFromTheSocket
+            };
+        });
+
+        //test broadcast from server
+
 
 
     }
+
+    //cpu usage when server is hiddle
+    //https://stackoverflow.com/questions/63166/how-to-determine-cpu-and-memory-consumption-from-inside-a-process
+}
+
+future<string> TCPServerTester::readSocket(int socket, uint timeout_ms)
+{
+    return th.enqueue([](int socket2, uint timeout_ms2){
+        auto start = std::chrono::system_clock::now();
+        double elaspedTime = 0.f;
+        char data[1024*1024]; //1k buffer
+        size_t readCount = 0;
+
+        while (elaspedTime < timeout_ms2)
+        {
+            std::chrono::nanoseconds duration = std::chrono::system_clock::now() - start;
+            elaspedTime = duration.count()/1000.f/1000.f;
+
+            readCount = recv(socket2,data, 1024*1024, 0);
+            if (readCount > 0)
+                break;
+        }
+
+        string ret = string(data, readCount);
+        return ret;
+    }, socket, timeout_ms);
 }
 
 future<int> TCPServerTester::connectToServcer(string host, int port)

@@ -3,19 +3,43 @@
 #include "TCPServer.h"
 
 #pragma region SocketHelper class
-	void TCPServerLib::SocketHelper::addReceiveListener(function<void(ClientInfo *client, char* data,  size_t size)> onReceive)
+	int TCPServerLib::SocketHelper::addReceiveListener(function<void(ClientInfo *client, char* data,  size_t size)> onReceive)
 	{
-		this->receiveListeners.push_back(onReceive);
+		int id = listenersIdCounter++;
+		this->receiveListeners[id] = onReceive;
+		return id;
 	}
 
-	void TCPServerLib::SocketHelper::addReceiveListener_s(function<void(ClientInfo *client, string data)> onReceive)
+	int TCPServerLib::SocketHelper::addReceiveListener_s(function<void(ClientInfo *client, string data)> onReceive)
 	{
-		this->receiveListeners_s.push_back(onReceive);
+		int id = listenersIdCounter++;
+		this->receiveListeners_s[id] = onReceive;
+		return id;
 	}
 
-	void TCPServerLib::SocketHelper::addConEventListener(function<void(ClientInfo *client, CONN_EVENT event)> onConEvent)
+	int TCPServerLib::SocketHelper::addConEventListener(function<void(ClientInfo *client, CONN_EVENT event)> onConEvent)
 	{
-		this->connEventsListeners.push_back(onConEvent);
+		int id = listenersIdCounter++;
+		this->connEventsListeners[id] = onConEvent;
+		return id;
+	}
+
+	void TCPServerLib::SocketHelper::removeListener(int id)
+	{
+		if (this->receiveListeners.count(id))
+			this->receiveListeners.erase(id);
+	}
+
+	void TCPServerLib::SocketHelper::removeListener_s(int id)
+	{
+		if (this->receiveListeners_s.count(id))
+			this->receiveListeners_s.erase(id);
+	}
+
+	void TCPServerLib::SocketHelper::removeConEventListener(int id)
+	{
+		if (this->connEventsListeners.count(id))
+			this->connEventsListeners.erase(id);
 	}
 #pragma endregion
 
@@ -34,12 +58,12 @@
 			//notify the events in the TCPServer
 			for (auto &c: this->receiveListeners)
 			{
-				c(client, data, size);
+				c.second(client, data, size);
 			}
 
 			for (auto &c: this->receiveListeners_s)
 			{
-				c(client, dataAsString);
+				c.second(client, dataAsString);
 			}
 
 			//notify the events in the 'client'
@@ -55,7 +79,7 @@
 			//notify the events in the TCPServer
 			for (auto &c: this->connEventsListeners)
 			{
-				c(client, action);
+				c.second(client, action);
 			}
 
 			client->___notifyListeners_connEvent(action);
@@ -80,7 +104,8 @@
 
 			this->__tasks = tasker;
 
-			int numStarted = 0;
+			atomic<int> numStarted;
+			numStarted = 0;
 
 			for (auto &p: ports)
 			{
@@ -423,12 +448,12 @@
 		//notify the events in the TCPServer
 		for (auto &c: this->receiveListeners)
 		{
-			c(this, data, size);
+			c.second(this, data, size);
 		}
 
 		for (auto &c: this->receiveListeners_s)
 		{
-			c(this, dataAsStr);
+			c.second(this, dataAsStr);
 		}
 
 	}
@@ -437,7 +462,7 @@
 	{
 		for (auto &c: this->connEventsListeners)
 		{
-			c(this, action);
+			c.second(this, action);
 		}
 	}
 

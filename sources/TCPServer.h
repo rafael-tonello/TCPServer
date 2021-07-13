@@ -12,8 +12,8 @@
 #include <pthread.h>
 #include <iostream>
 #include <vector>
-#include "ThreadPool/ThreadPool.h"
-#include <sstream>
+//#include "ThreadPool/ThreadPool.h"
+#include <string>
 #pragma region include for networking
     #include <sys/types.h>
     #include <fcntl.h>
@@ -24,6 +24,7 @@
     #include <sys/socket.h>
     #include <sys/ioctl.h>
 #pragma endregion
+#include <ThreadPool.h>
 
 namespace TCPServerLib
 {
@@ -39,25 +40,22 @@ namespace TCPServerLib
             #ifdef __TESTING__
                 public: 
             #endif
-            vector<function<void(ClientInfo *client, char* data,  size_t size)>> receiveListeners;
-            vector<function<void(ClientInfo *client, string data)>> receiveListeners_s;
-            vector<function<void(ClientInfo *client, CONN_EVENT event)>> connEventsListeners;
+            int listenersIdCounter = 0;
+            map<int, function<void(ClientInfo *client, char* data,  size_t size)>> receiveListeners;
+            map<int, function<void(ClientInfo *client, string data)>> receiveListeners_s;
+            map<int, function<void(ClientInfo *client, CONN_EVENT event)>> connEventsListeners;
         public:
             int socketHandle;
             map<string, void*> tags;
 
-            void addReceiveListener(function<void(ClientInfo *client, char* data,  size_t size)> onReceive);
-            void addReceiveListener_s(function<void(ClientInfo *client, string data)> onReceive);
-            void addConEventListener(function<void(ClientInfo *client, CONN_EVENT event)> onConEvent);
+            int addReceiveListener(function<void(ClientInfo *client, char* data,  size_t size)> onReceive);
+            void removeListener(int id);
+            int addReceiveListener_s(function<void(ClientInfo *client, string data)> onReceive);
+            void removeListener_s(int id);
+            int addConEventListener(function<void(ClientInfo *client, CONN_EVENT event)> onConEvent);
+            void removeConEventListener(int id);
 
-            void* __getPrivate(string n){
-                if (n == "receiveListeners")
-                    return (void*)&this->receiveListeners;
-                else if (n == "receiveListeners_s")
-                    return (void*)&this->receiveListeners_s;
-                else if (n == "connEventsListeners")
-                    return (void*)&this->connEventsListeners;
-            }
+
     };
 
     class ClientInfo: public SocketHelper{
@@ -88,13 +86,13 @@ namespace TCPServerLib
 
     
 
-    class TCPServer: SocketHelper{
+    class TCPServer: public SocketHelper{
         private:
         #ifdef __TESTING__
             public: 
         #endif
             const int _CONF_MAX_READ_IN_A_TASK = 10485760;
-            const int _CONF_DEFAULT_LOOP_WAIT = 1000;
+            const int _CONF_DEFAULT_LOOP_WAIT = 500;
             const int _CONF_READ_BUFFER_SIZE = 10240;
 
             std::atomic<bool> running;
