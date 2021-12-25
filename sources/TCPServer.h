@@ -12,7 +12,7 @@
 #include <pthread.h>
 #include <iostream>
 #include <vector>
-//#include "ThreadPool/ThreadPool.h"
+#include <ThreadPool.h>
 #include <string>
 #pragma region include for networking
     #include <sys/types.h>
@@ -77,10 +77,15 @@ namespace TCPServerLib
             ClientInfo(TCPServer *server)
             {
                 this->server = server;
+                __reading = false;
             }
 
             ClientInfo(){
                 __reading = false;
+            }
+
+            ~ClientInfo(){
+                //cout << "client deleted" << endl;
             }
     };
 

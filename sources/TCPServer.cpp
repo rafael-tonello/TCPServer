@@ -85,19 +85,13 @@
 			client->___notifyListeners_connEvent(action);
 			
 			//IMPORTANT: if disconnected, the 'client' must be destroyed here (or in the function that calls this function);
-			if (action == CONN_EVENT::DISCONNECTED)
-			{
-				connectClientsMutext.lock();
-				this->connectedClients.erase(client->socket);
-				connectClientsMutext.unlock();
-				delete client;
-			}
 		}
 
 		void TCPServerLib::TCPServer::initialize(vector<int> ports, ThreadPool* tasker)
 		{
 			this->running = true;
 			this->nextLoopWait = _CONF_DEFAULT_LOOP_WAIT;
+			this->connectedClients.clear();
 
 			if (tasker == NULL)
 				tasker = new ThreadPool();
@@ -179,14 +173,14 @@
 							if (theSocket >= 0)
 							{
 								//creat ea new client
-								ClientInfo client;
-								client.socketHandle = theSocket;
-								client.server = this;
-								client.socket = theSocket;
+								ClientInfo *client = new ClientInfo();
+								client->socketHandle = theSocket;
+								client->server = this;
+								client->socket = theSocket;
 								connectClientsMutext.lock();
-								this->connectedClients[theSocket] = &client;
+								this->connectedClients[theSocket] = client;
 								connectClientsMutext.unlock();
-								this->notifyListeners_connEvent(&client, CONN_EVENT::CONNECTED);
+								this->notifyListeners_connEvent(client, CONN_EVENT::CONNECTED);
 							}
 							else{
 								usleep(5000);
@@ -223,40 +217,49 @@
 				//scrolls the list of clients and checks if there is data to be read
 				//a for was used instead a 'foreach' to allow connectedClientsMutex lock() and unlock() and allow modificatiosn in the list
 				//during execution.
-				for (size_t c = 0; c < this->connectedClients.size(); c++)
+				//for (size_t c = 0; c < this->connectedClients.size(); c++)
+				int64_t max = (int64_t)this->connectedClients.size();
+				max = max-1;
+				for (int64_t c = max; c >= 0; c--)
 				{
 					connectClientsMutext.lock();
-					auto currClient = connectedClients.begin();
-					std::advance(currClient, c);
+					auto currClientPair = connectedClients.begin();
+					std::advance(currClientPair, c);
+
+					auto currClient = currClientPair->second;
+
+
 				//for (auto &currClient: this->connectedClients)
 				//{
 					//checks if a reading process is already in progress
-					if (!currClient->second->__reading)
+					if (!currClient->__reading)
 					{
 						//checks if client is connected
-						if (this->__SocketIsConnected(currClient->second->socket))
+						if (this->__SocketIsConnected(currClient->socket))
 						{
 
 							int availableBytes = 0;
-							ioctl(currClient->second->socket, FIONREAD, &availableBytes);
+							ioctl(currClient->socket, FIONREAD, &availableBytes);
 
 							if (availableBytes > 0)
 							{
 								//create a new task in the thread pool (this->__tasks) to read the socket
-								currClient->second->__reading = true;
+								currClient->__reading = true;
 
 								this->__tasks->enqueue([this](ClientInfo* __currClient){
 									this->chatWithClient(__currClient);
 									__currClient->__reading = false;
-								}, currClient->second);
+								}, currClient);
 							}
 						}
 						else
 						{
 							//send disconnected notifications
+							this->connectedClients.erase(currClient->socket);
 							this->__tasks->enqueue([this](ClientInfo* __currClient){
 								this->notifyListeners_connEvent(__currClient, CONN_EVENT::DISCONNECTED);
-							}, currClient->second);
+								delete __currClient;
+							}, currClient);
 						}
 					}
 					connectClientsMutext.unlock();
