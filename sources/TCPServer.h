@@ -23,6 +23,7 @@
     #include <netinet/in.h>
     #include <sys/socket.h>
     #include <sys/ioctl.h>
+    #include <signal.h>
 #pragma endregion
 #include <ThreadPool.h>
 
@@ -96,7 +97,8 @@ namespace TCPServerLib
         #ifdef __TESTING__
             public: 
         #endif
-            const int _CONF_MAX_READ_IN_A_TASK = 10485760;
+            //const int _CONF_MAX_READ_IN_A_TASK = 10485760;
+            //const int _CONF_DEFAULT_LOOP_WAIT = 500;
             const int _CONF_DEFAULT_LOOP_WAIT = 500;
             const int _CONF_READ_BUFFER_SIZE = 10240;
 
@@ -112,9 +114,10 @@ namespace TCPServerLib
             void initialize(vector<int> ports, ThreadPool *tasker = NULL);
             void waitClients(int port, function<void(bool sucess)> onStartingFinish);
             void debug(string msg){cout << "Debug: " << msg << endl;}
-            void chatWithClient(ClientInfo *client);
+            void chatWithClient(ClientInfo *client, int ammountToRead);
             bool __SocketIsConnected( int socket);
             void clientsCheckLoop();
+            bool SetSocketBlockingEnabled(int fd, bool blocking);
         public:
             map<string, void*> tags;
             

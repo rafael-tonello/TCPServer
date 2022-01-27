@@ -156,7 +156,7 @@
 				usleep(1000);
 				if (status >= 0)
 				{
-					//SetSocketBlockingEnabled(listener, false);
+					SetSocketBlockingEnabled(listener, false);
 					status = listen(listener, 5);
 					if (status >= 0)
 					{
@@ -172,6 +172,11 @@
 
 							if (theSocket >= 0)
 							{
+								int reuse_opt = 1;
+								
+								//setsockopt(theSocket, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int));
+								//fcntl(theSocket, F_SETFL, O_NONBLOCK);
+
 								//creat ea new client
 								ClientInfo *client = new ClientInfo();
 								client->socketHandle = theSocket;
@@ -231,41 +236,49 @@
 
 				//for (auto &currClient: this->connectedClients)
 				//{
-					//checks if a reading process is already in progress
-					if (!currClient->__reading)
+					//checks if client is connected
+					if (this->__SocketIsConnected(currClient->socket))
 					{
-						//checks if client is connected
-						if (this->__SocketIsConnected(currClient->socket))
-						{
 
+						//checks if a reading process is already in progress
+						if (!currClient->__reading)
+						{
 							int availableBytes = 0;
 							ioctl(currClient->socket, FIONREAD, &availableBytes);
+							//cout << "busy threads: "<< this->__tasks->getTotalBusyThreads() << ", pending: " << this->__tasks->getTaskCount() << endl;
 
 							if (availableBytes > 0)
 							{
+								nextLoopWait = 0;
 								//create a new task in the thread pool (this->__tasks) to read the socket
 								currClient->__reading = true;
 
-								this->__tasks->enqueue([this](ClientInfo* __currClient){
-									this->chatWithClient(__currClient);
+								this->__tasks->enqueue([this](ClientInfo* __currClient, int __availableBytes){
+									this->chatWithClient(__currClient, __availableBytes);
 									__currClient->__reading = false;
-								}, currClient);
+								}, currClient, availableBytes);
+
 							}
 						}
-						else
-						{
-							//send disconnected notifications
-							this->connectedClients.erase(currClient->socket);
-							this->__tasks->enqueue([this](ClientInfo* __currClient){
-								this->notifyListeners_connEvent(__currClient, CONN_EVENT::DISCONNECTED);
+					}
+					else
+					{
+						//send disconnected notifications
+						currClient->__reading = false;
+						this->connectedClients.erase(currClient->socket);
+						this->__tasks->enqueue([this](ClientInfo* __currClient){
+							this->notifyListeners_connEvent(__currClient, CONN_EVENT::DISCONNECTED);
+							{
+								usleep(10000);
 								delete __currClient;
-							}, currClient);
-						}
+							}
+						}, currClient);
 					}
 					connectClientsMutext.unlock();
 				}
 
 				//checks if the current loop must waits.. this block allow to prevent waiting, if needed, outside here
+
 				if (nextLoopWait > 0)
 					usleep(nextLoopWait);
 
@@ -273,28 +286,17 @@
 			}
 		}
 
-		void TCPServerLib::TCPServer::chatWithClient(ClientInfo *client)
+		void TCPServerLib::TCPServer::chatWithClient(ClientInfo *client, int ammountToRead)
 		{
 			int bufferSize = _CONF_READ_BUFFER_SIZE;
 			char readBuffer[bufferSize]; //10k buffer
-			int totalRead = 0;
 
-			while(true)
+			ammountToRead = ammountToRead > bufferSize ? bufferSize : ammountToRead;
+
+			auto readCount = recv(client->socket,readBuffer, ammountToRead, 0);
+			if (readCount > 0)
 			{
-				auto readCount = recv(client->socket,readBuffer, bufferSize, 0);
-				if (readCount > 0)
-				{
-					this->notifyListeners_dataReceived(client, readBuffer, readCount);
-					totalRead += readCount;
-					//limits the reading in a a maximum of 5MB (to prevent thread monopolization in possible - or not? - very long input streams)
-					if (totalRead > _CONF_MAX_READ_IN_A_TASK)
-					{
-						//thre remaing data will be read in another task
-						break;	
-					}
-				}
-				else
-					break;
+				this->notifyListeners_dataReceived(client, readBuffer, readCount);
 			}
 		}
 
@@ -305,9 +307,16 @@
 
 			int error_code;
 			socklen_t error_code_size = sizeof(error_code);
-			getsockopt(socket, SOL_SOCKET, SO_ERROR, &error_code, &error_code_size);
+			auto getsockoptRet = getsockopt(socket, SOL_SOCKET, SO_ERROR, &error_code, &error_code_size);
 			//string desc(strerror(error_code));
-			return error_code == 0;
+			//return error_code == 0;
+			if (getsockoptRet < 0) {
+				return false;
+			} else if (error_code == 0) {
+				return true;
+			} else {
+				return false;
+			}
 		}
 
 	#pragma endregion
@@ -334,8 +343,24 @@
 	void TCPServerLib::TCPServer::sendData(ClientInfo *client, char* data, size_t size)
 	{ 
 		client->writeMutex.lock();
-		
-		auto bytesWrite = send(client->socket, data, size, 0);
+		connectClientsMutext.lock();
+
+		if (client->socket == 21)
+		{
+			int b = 10;
+			int c = b;
+		}
+
+		if (connectedClients.count(client->socket) > 0)
+			if (__SocketIsConnected(client->socket))
+			{
+				auto bytesWrite = send(client->socket, data, size, 0);
+			}
+			else
+				cout << "Try sendind data to disconnected client" << endl;
+		else
+			cout << "Try sendind data to unknown client" << endl;
+		connectClientsMutext.unlock();
 		
 		client->writeMutex.unlock();
 	}
@@ -418,6 +443,21 @@
 		return this->__SocketIsConnected(client->socket);
 	}
 
+	bool TCPServerLib::TCPServer::SetSocketBlockingEnabled(int fd, bool blocking)
+	{
+	   if (fd < 0) return false;
+
+		#ifdef _WIN32
+		   unsigned long mode = blocking ? 0 : 1;
+		   return (ioctlsocket(fd, FIONBIO, &mode) == 0) ? true : false;
+		#else
+		   int flags = fcntl(fd, F_GETFL, 0);
+		   if (flags < 0) return false;
+		   flags = blocking ? (flags&~O_NONBLOCK) : (flags|O_NONBLOCK);
+		   return (fcntl(fd, F_SETFL, flags) == 0) ? true : false;
+		#endif
+	}
+
 
 	#pragma endregion
 #pragma endregion
@@ -473,6 +513,8 @@
 	{
 		return this->receiveListeners_s.size();
 	}
+
+	
 
 
 
