@@ -310,6 +310,11 @@
 			auto getsockoptRet = getsockopt(socket, SOL_SOCKET, SO_ERROR, &error_code, &error_code_size);
 			//string desc(strerror(error_code));
 			//return error_code == 0;
+
+
+			//in the ser of "'TCPCLientLib", after tests, I received 0 in the var 'readed' when server closes the connection and error_code is always 0, wheter or not connected to the server
+			//in the case of "TCPServerLib", the error_code works fine
+			
 			if (getsockoptRet < 0) {
 				return false;
 			} else if (error_code == 0) {
