@@ -135,6 +135,8 @@
 			struct sockaddr_in *cli_addr = new sockaddr_in();
 			int status;
 			socklen_t clientSize;
+			char *ip_str;
+
 
 			listener = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -182,6 +184,13 @@
 								client->socketHandle = theSocket;
 								client->server = this;
 								client->socket = theSocket;
+								ip_str = new char[255];
+								inet_ntop(AF_INET, &cli_addr->sin_addr, ip_str, 255);
+								client->address = string(ip_str);
+								delete[] ip_str;
+								client->port = ntohs(cli_addr->sin_port);
+								client->cli_addr = *cli_addr;
+
 								connectClientsMutext.lock();
 								this->connectedClients[theSocket] = client;
 								connectClientsMutext.unlock();

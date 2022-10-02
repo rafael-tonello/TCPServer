@@ -24,6 +24,7 @@
     #include <sys/socket.h>
     #include <sys/ioctl.h>
     #include <signal.h>
+    #include <arpa/inet.h>
 #pragma endregion
 #include <ThreadPool.h>
 
@@ -68,6 +69,11 @@ namespace TCPServerLib
             int socket;
             mutex writeMutex;
             TCPServer *server;
+
+            string address;
+            int port;
+            sockaddr_in cli_addr;
+
             void sendData(char* data, size_t size);
             void sendString(string data);
             bool isConnected();
