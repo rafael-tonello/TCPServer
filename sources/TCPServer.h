@@ -98,6 +98,7 @@ namespace TCPServerLib
 
     
 
+    using StartResultFunc = function<void(vector<int> startedPorts, vector<int> failedStartPorts)>;
     class TCPServer: public SocketHelper{
         private:
         #ifdef __TESTING__
@@ -117,9 +118,9 @@ namespace TCPServerLib
             vector<thread*> listenThreads;
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
-            void initialize(vector<int> ports, ThreadPool *tasker = NULL);
+            void initialize(vector<int> ports, ThreadPool *tasker = NULL, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
             void waitClients(int port, function<void(bool sucess)> onStartingFinish);
-            void debug(string msg){cout << "Debug: " << msg << endl;}
+            void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
             void chatWithClient(ClientInfo *client, int ammountToRead);
             bool __SocketIsConnected( int socket);
             void clientsCheckLoop();
@@ -127,8 +128,8 @@ namespace TCPServerLib
         public:
             map<string, void*> tags;
             
-            TCPServer(int port, ThreadPool *tasker = NULL);
-            TCPServer(vector<int> ports, ThreadPool *tasker = NULL);
+            TCPServer(int port, bool &startedWithSucess, ThreadPool *tasker = NULL);
+            TCPServer(vector<int> ports, ThreadPool *tasker = NULL, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
             ~TCPServer();
 
             bool isConnected(ClientInfo *client);

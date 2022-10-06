@@ -44,8 +44,6 @@ CC_FLAGS=-c			\
          -ansi      \
          -pedantic  \
 		 -pthread   \
-		 -lssl		\
-		 -lcrypto	\
 		 -g			\
 		 -D__TESTING__ \
 		 -std=c++11 \
@@ -58,8 +56,6 @@ LK_FLAGS=-W         \
          -ansi      \
          -pedantic  \
 		 -pthread   \
-		 -lssl		\
-		 -lcrypto	\
 		 -g			\
 		 -D__TESTING__ \
 		 -std=c++11 \

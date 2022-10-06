@@ -87,7 +87,7 @@
 			//IMPORTANT: if disconnected, the 'client' must be destroyed here (or in the function that calls this function);
 		}
 
-		void TCPServerLib::TCPServer::initialize(vector<int> ports, ThreadPool* tasker)
+		void TCPServerLib::TCPServer::initialize(vector<int> ports, ThreadPool* tasker, StartResultFunc on_start_done)
 		{
 			this->running = true;
 			this->nextLoopWait = _CONF_DEFAULT_LOOP_WAIT;
@@ -100,19 +100,28 @@
 
 			atomic<int> numStarted;
 			numStarted = 0;
+			vector<int> sucessPorts;
+			vector<int> errorPorts;
 
 			for (auto &p: ports)
 			{
-				thread *th = new thread([&](){
-					this->waitClients(p, [&](bool sucess){ numStarted++;});
-				});
+				thread *th = new thread([&](int _p){
+					this->waitClients(_p, [&](bool sucess)
+					{ 
+						numStarted++;
+						if (sucess)
+							sucessPorts.push_back(_p);
+						else
+							errorPorts.push_back(_p);
 
-				
+					});
+				}, p);
 
 				th->detach();
 				
 				this->listenThreads.push_back(th);
 			}
+
 
 			thread *th2 = new thread([this](){
 				this->clientsCheckLoop();
@@ -123,6 +132,8 @@
 			//wait for sockets initialization
 			while (numStarted < ports.size())
 				usleep(100);
+
+			on_start_done(sucessPorts, errorPorts);
 		}
 
 		void TCPServerLib::TCPServer::waitClients(int port, function<void(bool sucess)> onStartingFinish)
@@ -338,15 +349,17 @@
 	#pragma region public functions
 
 
-	TCPServerLib::TCPServer::TCPServer(int port, ThreadPool *tasker)
+	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, ThreadPool *tasker)
 	{
 		vector<int> ports = {port};
-		this->initialize(ports, tasker);
+		this->initialize(ports, tasker, [&](vector<int> sucess, vector<int> failure){
+			startedWithSucess = sucess.size() == 0;
+		});
 	}
 
-	TCPServerLib::TCPServer::TCPServer(vector<int> ports, ThreadPool *tasker)
+	TCPServerLib::TCPServer::TCPServer(vector<int> ports, ThreadPool *tasker, StartResultFunc on_start_done)
 	{
-		this->initialize(ports, tasker);
+		this->initialize(ports, tasker, on_start_done);
 	}
 
 	TCPServerLib::TCPServer::~TCPServer()

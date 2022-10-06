@@ -159,11 +159,10 @@ void Tester::delMsgObserver(int id)
 
 tuple<string, void*> Tester::msgBusWaitNext(string messagePrefix, function<void()> preAction)
 {
-    int observerId;
     promise<tuple<string, void*>> prom;
     auto fut = prom.get_future();
 
-    observerId = addMsgBusObserver([&](string msg, string payloadS, void* payloadV){
+    addMsgBusObserver([&](string msg, string payloadS, void* payloadV){
         tuple<string, void*> r;
         std::get<0>(r) = payloadS;
         std::get<1>(r) = payloadV;
@@ -172,4 +171,84 @@ tuple<string, void*> Tester::msgBusWaitNext(string messagePrefix, function<void(
 
     preAction();
     return fut.get();
+}
+
+
+int Tester::runTests(vector<Tester*> testers, int argc, char* argv[])
+{
+    cout << "Test results:" << endl;
+    vector<string> args;
+    for (int c = 0; c < argc; c++) args.push_back(string(argv[c]));
+
+    //raises the contexts of the testers and gruoup them by specifcs contexts
+    map<string, vector<Tester*>> contexts;// = {"all", {}};
+    vector<string> contextsRunOrder;
+
+    for (auto &c: testers)
+    {
+        
+        auto testerContexts = c->getContexts();
+        for (auto &c2: testerContexts)
+        {
+            if (contexts.count(c2) == 0)
+            {
+                contexts[c2] = {};
+                contextsRunOrder.push_back(c2);
+            }
+            
+            contexts[c2].push_back(c);
+        }
+
+        //sets ta special tag in the tester indicating that it is not runned yet. This tag will be used to prevent call more one time a tester.
+        //c->setTag("main.tested", "false");
+    }
+
+    //identify required contexts (or all if no one is informed)
+    //calls the testers according to the required contexts
+
+    //checks if user needs help
+    if (args.size() > 1 &&  args[1].find(string("-h")) != string::npos)
+    {
+        //shows the available context and an example of usage
+
+        cout << "This is a test program. It is make to run tests in the code of another program. You can pass some contexts to run a limited test or use the "
+                << "special context 'all' to run all tests." << endl
+                << "Avaibale contexts are: "<< endl
+                << "    all" << endl;
+                for (auto &c: contexts)
+                    cout << "    " << c.first << endl;
+
+
+        return 0;
+    }
+
+    function<void(string context)> runContext = [&](string context){
+        if (contexts.count(context) > 0)
+        {
+            for (auto &c: contexts[context])
+                c->run(context);
+        }
+        else
+            cerr << "        Context '" << context << "' has not found" << endl;
+
+    };
+
+    if (args.size() == 1 || (args.size() == 2 && args[1] == "all"))
+        for (auto &c : contextsRunOrder)
+        {
+            cout << "    Context " << c << ":" << endl;
+            runContext(c);
+        }
+
+    else
+        for (size_t c =1; c < args.size(); c++)
+        {
+            cout << "    Context " << args[c] << ":" << endl;
+            runContext(args[c]);
+        }
+
+    cout << endl << "Final statistics: "<< to_string(Tester::testsPassed + Tester::testsFailed) <<" tests perfomed, where " << Tester::testsPassed << " passed and " << Tester::testsFailed << " failed." << endl;;
+
+
+    return Tester::testsFailed;
 }

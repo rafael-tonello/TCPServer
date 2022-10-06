@@ -1,6 +1,7 @@
 #ifndef __TESTER_H
 #define __TESTER_H
 
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -11,7 +12,7 @@
 #include <mutex>
 #include <future>
 
-//#define __TESTING__ --> was defined in the makefile
+#define __TESTING__ //--> was defined in the makefile
 
 using namespace std;
 struct TestResult{
@@ -90,6 +91,10 @@ public:
         string passMessage = "", 
         string failMessage = ""
     );
+
+    static int runTests(vector<Tester*> testers, int argc = 0, char* argv[] = NULL);
+
+
 
     /*void test(
         string desc, 

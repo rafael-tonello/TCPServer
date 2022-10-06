@@ -131,8 +131,8 @@ future<string> TCPServerTester::readSocket(int socket, uint timeout_ms)
 
 future<int> TCPServerTester::connectToServcer(string host, int port)
 {
-    return th.enqueue([&](){
-        int sock = 0, valread;
+    return th.enqueue([](string _host, int _port){
+        int sock = 0;
         if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
         {
             printf("\n Socket creation error \n");
@@ -141,22 +141,23 @@ future<int> TCPServerTester::connectToServcer(string host, int port)
     
         struct sockaddr_in serv_addr;
         serv_addr.sin_family = AF_INET;
-        serv_addr.sin_port = htons(port);
+        serv_addr.sin_port = htons(_port);
         
         // Convert IPv4 and IPv6 addresses from text to binary form
-        if(inet_pton(AF_INET, host.c_str(), &serv_addr.sin_addr)<=0) 
+        if(inet_pton(AF_INET, _host.c_str(), &serv_addr.sin_addr)<=0) 
         {
             printf("\nInvalid address/ Address not supported \n");
             return -1;
         }
     
-        if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+        int ret = connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+        if (ret < 0)
         {
             printf("\nConnection Failed \n");
-            return -2;
+            return ret;
         }
 
         return sock;
-    });
+    }, host, port);
 }
 
