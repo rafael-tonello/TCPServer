@@ -353,7 +353,7 @@
 	{
 		vector<int> ports = {port};
 		this->initialize(ports, tasker, [&](vector<int> sucess, vector<int> failure){
-			startedWithSucess = sucess.size() == 0;
+			startedWithSucess = sucess.size() > 0;
 		});
 	}
 
