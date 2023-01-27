@@ -122,10 +122,13 @@ namespace TCPServerLib
             void initialize(vector<int> ports, ThreadPool *tasker = NULL, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
             void waitClients(int port, function<void(bool sucess)> onStartingFinish);
             void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
-            void chatWithClient(ClientInfo *client, int ammountToRead);
             bool __SocketIsConnected( int socket);
-            void clientsCheckLoop();
             bool SetSocketBlockingEnabled(int fd, bool blocking);
+
+            void clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr);
+            void clientSocketDisconnected(int theSocket);
+            void readDataFromClient(int socket);
+
         public:
             map<string, void*> tags;
             

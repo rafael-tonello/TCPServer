@@ -123,12 +123,7 @@
 			}
 
 
-			thread *th2 = new thread([this](){
-				this->clientsCheckLoop();
-			});
-
-			th2->detach();
-
+			
 			//wait for sockets initialization
 			while (numStarted < ports.size())
 				usleep(100);
@@ -180,14 +175,26 @@
 						efd = epoll_create1 (0);
 						if (efd != -1)
 						{
+							event.data.fd = listener;
+  							event.events = EPOLLIN | EPOLLET;
 							epoll_ctl_result = epoll_ctl (efd, EPOLL_CTL_ADD, listener, &event);
+
 							if (epoll_ctl_result != -1)
 							{
-								events = calloc (MAXEVENTS, sizeof event);
+								onStartingFinish(true);
+
+								events = (struct epoll_event*)calloc (MAXEVENTS, sizeof event);
 
 								while (true)
 								{
+									event.data.fd = listener;
+  									event.events = EPOLLIN | EPOLLET;
+									epoll_ctl_result = epoll_ctl (efd, EPOLL_CTL_ADD, listener, &event);
+											
+											
 									foundEvents = epoll_wait (efd, events, MAXEVENTS, -1);
+
+									
       								for (auto i = 0; i < foundEvents; i++)
 									{
 										if ((events[i].events & EPOLLERR) ||
@@ -210,15 +217,15 @@
 															//int client = accept(listener, 0, 0);
 												if (theSocket >= 0)
 												{
+													SetSocketBlockingEnabled(theSocket, false);
 													event.data.fd = theSocket;
 													event.events = EPOLLIN | EPOLLET;
 													auto tmpResult = epoll_ctl (efd, EPOLL_CTL_ADD, theSocket, &event);
 													if (tmpResult != -1)
-														clientSocketConnected(theSocket);
+														clientSocketConnected(theSocket, cli_addr);
 													else
 													{
 														this->debug("Client epoll_ctl error");
-														onStartingFinish(false);
 													}
 												}
 												else if (theSocket == -1)
@@ -250,6 +257,9 @@
 										}
 									}
 								}
+
+								free (events);
+								close (listener);
 							}
 							else
 							{
@@ -286,7 +296,7 @@
 				//n = write(newsockfd,"I got your message",18);
 		}
 
-		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket)
+		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr)
 		{
 			//int reuse_opt = 1;
 								
@@ -298,7 +308,7 @@
 			client->socketHandle = theSocket;
 			client->server = this;
 			client->socket = theSocket;
-			ip_str = new char[255];
+			char *ip_str = new char[255];
 			inet_ntop(AF_INET, &cli_addr->sin_addr, ip_str, 255);
 			client->address = string(ip_str);
 			delete[] ip_str;
@@ -311,8 +321,27 @@
 			this->notifyListeners_connEvent(client, CONN_EVENT::CONNECTED);
 		}
 
+		void TCPServerLib::TCPServer::clientSocketDisconnected(int theSocket)
+		{
+			close (theSocket);
+			if (connectedClients.count(theSocket) == 0)
+			{
+				//this->debug("Detect a disconnection of a not connected client !!!!!!!!!!!!!!!!!!!");
+				//clientSocketConnected(theSocket);
+				return;
+			}
 
-		void readDataFromClient(int socket)
+			ClientInfo *client = connectedClients[theSocket];
+
+			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
+
+			connectClientsMutext.lock();
+			this->connectedClients.erase(theSocket);
+			connectClientsMutext.unlock();
+		}
+
+
+		void TCPServerLib::TCPServer::readDataFromClient(int socket)
 		{
 			int bufferSize = _CONF_READ_BUFFER_SIZE;
 			char readBuffer[bufferSize]; //10k buffer
@@ -320,12 +349,26 @@
 			bool done = false;
 			ssize_t count;
 
+
 			while (true)
 			{
 
-				count = read (events[i].data.fd, readBuffer, sizeof readBuffer);
+				count = read (socket, readBuffer, sizeof readBuffer);
+				//count = recv(socket,readBuffer, sizeof readBuffer, 0);
 				if (count > 0)
-					this->notifyListeners_dataReceived(client, , count);
+				{
+						
+					if (connectedClients.count(socket) == 0)
+					{
+						this->debug("reading data from a not connect client!!!!!!!!!!!!!!!!!!!");
+						//clientSocketConnected(socket);
+						return;
+					}
+
+					ClientInfo *client = connectedClients[socket];
+			
+					this->notifyListeners_dataReceived(client, readBuffer, count);
+				}
 				else if (count == 0)
 				{
 					this->debug("Error reading data from client");
@@ -333,7 +376,6 @@
 					break;
 				}
 				else{
-					this->debug("General error opening socket");
 					if (errno != EAGAIN)
 					{
 						done = true;
@@ -343,99 +385,11 @@
 			}
 			if (done)
 			{
-				printf ("Closed connection on descriptor %d\n",
-						socket);
-
-				/* Closing the descriptor will make epoll remove it
-					from the set of descriptors which are monitored. */
-				close (socket);
+				clientSocketDisconnected(socket);
 			}
 		}
 
-		void TCPServerLib::TCPServer::clientsCheckLoop()
-		{
-			while (this->running)
-			{
-				//scrolls the list of clients and checks if there is data to be read
-				//a for was used instead a 'foreach' to allow connectedClientsMutex lock() and unlock() and allow modificatiosn in the list
-				//during execution.
-				//for (size_t c = 0; c < this->connectedClients.size(); c++)
-				int64_t max = (int64_t)this->connectedClients.size();
-				max = max-1;
-				for (int64_t c = max; c >= 0; c--)
-				{
-					connectClientsMutext.lock();
-					auto currClientPair = connectedClients.begin();
-					std::advance(currClientPair, c);
-
-					auto currClient = currClientPair->second;
-
-
-				//for (auto &currClient: this->connectedClients)
-				//{
-					//checks if client is connected
-					if (this->__SocketIsConnected(currClient->socket))
-					{
-
-						//checks if a reading process is already in progress
-						if (!currClient->__reading)
-						{
-							int availableBytes = 0;
-							ioctl(currClient->socket, FIONREAD, &availableBytes);
-							//cout << "busy threads: "<< this->__tasks->getTotalBusyThreads() << ", pending: " << this->__tasks->getTaskCount() << endl;
-
-							if (availableBytes > 0)
-							{
-								nextLoopWait = 0;
-								//create a new task in the thread pool (this->__tasks) to read the socket
-								currClient->__reading = true;
-
-								this->__tasks->enqueue([this](ClientInfo* __currClient, int __availableBytes){
-									this->chatWithClient(__currClient, __availableBytes);
-									__currClient->__reading = false;
-								}, currClient, availableBytes);
-
-							}
-						}
-					}
-					else
-					{
-						//send disconnected notifications
-						currClient->__reading = false;
-						this->connectedClients.erase(currClient->socket);
-						this->__tasks->enqueue([this](ClientInfo* __currClient){
-							this->notifyListeners_connEvent(__currClient, CONN_EVENT::DISCONNECTED);
-							{
-								usleep(10000);
-								delete __currClient;
-							}
-						}, currClient);
-					}
-					connectClientsMutext.unlock();
-				}
-
-				//checks if the current loop must waits.. this block allow to prevent waiting, if needed, outside here
-
-				if (nextLoopWait > 0)
-					usleep(nextLoopWait);
-
-				nextLoopWait = _CONF_DEFAULT_LOOP_WAIT;
-			}
-		}
-
-		void TCPServerLib::TCPServer::chatWithClient(ClientInfo *client, int ammountToRead)
-		{
-			
-
-			ammountToRead = ammountToRead > bufferSize ? bufferSize : ammountToRead;
-
-			auto readCount = recv(client->socket,readBuffer, ammountToRead, 0);
-			if (readCount > 0)
-			{
-				
-			}
-		}
-
+		
 		bool TCPServerLib::TCPServer::__SocketIsConnected(int socket)
 		{
 			char data;
