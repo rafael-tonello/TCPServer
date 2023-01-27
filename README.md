@@ -13,11 +13,6 @@ be generated. This file (tests/build/tests) is a binary file that run some tests
 
 Along with this code, there is a ".vscode" folder that contains some configurations for the Visual Studio Code. If you use VSCode, you can compile the tests direclty from the 'Debug' section.
 
-# dependencies
-This library depends of a thread pool libraty, that was written by me. If you make a recursive git clone of this project, you shouldn't have problema with this dependency. But if you choose to clone allow the repository, you should also clone this thread pool library and adjust the include int the 'TCPServer.h' file.
-
-The trhead pool library is in: https://github.com/rafael-tonello/ThreadPool
-
 # Using
 
 See some examples of how you can use this library.
