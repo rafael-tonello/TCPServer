@@ -25,6 +25,7 @@
     #include <sys/ioctl.h>
     #include <signal.h>
     #include <arpa/inet.h>
+    #include <sys/epoll.h>
 #pragma endregion
 #include <ThreadPool.h>
 
@@ -111,25 +112,27 @@ namespace TCPServerLib
 
             std::atomic<bool> running;
             std::atomic<int> nextLoopWait;
-
-            ThreadPool *__tasks = NULL;
+            
             map<int, ClientInfo*> connectedClients;
             std::mutex connectClientsMutext;
             vector<thread*> listenThreads;
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
-            void initialize(vector<int> ports, ThreadPool *tasker = NULL, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
+            void initialize(vector<int> ports, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
             void waitClients(int port, function<void(bool sucess)> onStartingFinish);
             void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
-            void chatWithClient(ClientInfo *client, int ammountToRead);
             bool __SocketIsConnected( int socket);
-            void clientsCheckLoop();
             bool SetSocketBlockingEnabled(int fd, bool blocking);
+
+            void clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr);
+            void clientSocketDisconnected(int theSocket);
+            void readDataFromClient(int socket);
+
         public:
             map<string, void*> tags;
             
-            TCPServer(int port, bool &startedWithSucess, ThreadPool *tasker = NULL);
-            TCPServer(vector<int> ports, ThreadPool *tasker = NULL, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
+            TCPServer(int port, bool &startedWithSucess);
+            TCPServer(vector<int> ports, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
             ~TCPServer();
 
             bool isConnected(ClientInfo *client);

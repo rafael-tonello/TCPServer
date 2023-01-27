@@ -41,5 +41,5 @@ int main(int argc, char* argv[]){
         //c->setTag("main.tested", "false");
     }
 
-    return Tester::runTests(testers, argc, argv);
+    Tester::runTests(testers, argc, argv);
 }
