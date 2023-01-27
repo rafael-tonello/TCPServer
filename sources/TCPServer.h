@@ -25,6 +25,7 @@
     #include <sys/ioctl.h>
     #include <signal.h>
     #include <arpa/inet.h>
+    #include <sys/epoll.h>
 #pragma endregion
 #include <ThreadPool.h>
 

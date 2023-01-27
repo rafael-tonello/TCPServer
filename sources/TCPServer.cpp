@@ -140,10 +140,13 @@
 		{
 			//create an socket to await for connections
 
-			int listener;
+			int listener, efd, epoll_ctl_result, foundEvents;
+			int MAXEVENTS = 128;
 
 			struct sockaddr_in *serv_addr = new sockaddr_in();
 			struct sockaddr_in *cli_addr = new sockaddr_in();
+			struct epoll_event event;
+  			struct epoll_event *events;
 			int status;
 			socklen_t clientSize;
 			char *ip_str;
@@ -174,45 +177,93 @@
 					if (status >= 0)
 					{
 
-						clientSize = sizeof(cli_addr);
-						onStartingFinish(true);
-
-						while (true)
+						efd = epoll_create1 (0);
+						if (efd != -1)
 						{
-							int theSocket = accept(listener, (struct sockaddr *) cli_addr, &clientSize);
-
-							//int client = accept(listener, 0, 0);
-
-							if (theSocket >= 0)
+							epoll_ctl_result = epoll_ctl (efd, EPOLL_CTL_ADD, listener, &event);
+							if (epoll_ctl_result != -1)
 							{
-								int reuse_opt = 1;
-								
-								//setsockopt(theSocket, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int));
-								//fcntl(theSocket, F_SETFL, O_NONBLOCK);
+								events = calloc (MAXEVENTS, sizeof event);
 
-								//creat ea new client
-								ClientInfo *client = new ClientInfo();
-								client->socketHandle = theSocket;
-								client->server = this;
-								client->socket = theSocket;
-								ip_str = new char[255];
-								inet_ntop(AF_INET, &cli_addr->sin_addr, ip_str, 255);
-								client->address = string(ip_str);
-								delete[] ip_str;
-								client->port = ntohs(cli_addr->sin_port);
-								client->cli_addr = *cli_addr;
+								while (true)
+								{
+									foundEvents = epoll_wait (efd, events, MAXEVENTS, -1);
+      								for (auto i = 0; i < foundEvents; i++)
+									{
+										if ((events[i].events & EPOLLERR) ||
+												(events[i].events & EPOLLHUP) ||
+												(!(events[i].events & EPOLLIN)))
+										{
+											/* An error has occured on this fd, or the socket is not
+												ready for reading (why were we notified then?) */
+											fprintf (stderr, "epoll error\n");
+											close (events[i].data.fd);
+											continue;
+										}
+										else if (listener == events[i].data.fd)
+										{
+											/* We have a notification on the listening socket, which
+												means one or more incoming connections. */
+											while (1)
+											{
+												int theSocket = accept(listener, (struct sockaddr *) cli_addr, &clientSize);
+															//int client = accept(listener, 0, 0);
+												if (theSocket >= 0)
+												{
+													event.data.fd = theSocket;
+													event.events = EPOLLIN | EPOLLET;
+													auto tmpResult = epoll_ctl (efd, EPOLL_CTL_ADD, theSocket, &event);
+													if (tmpResult != -1)
+														clientSocketConnected(theSocket);
+													else
+													{
+														this->debug("Client epoll_ctl error");
+														onStartingFinish(false);
+													}
+												}
+												else if (theSocket == -1)
+												{
+													if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+													{
+													/* We have processed all incoming
+														connections. */
+														break;
+													}
+													//else
+													//{
+													//	perror ("accept");
+													break;
+												}
+											}
+										}
+										else
+										{
 
-								connectClientsMutext.lock();
-								this->connectedClients[theSocket] = client;
-								connectClientsMutext.unlock();
-								this->notifyListeners_connEvent(client, CONN_EVENT::CONNECTED);
+											/* We have data on the fd waiting to be read. Read and
+                 							display it. We must read whatever data is available
+											completely, as we are running in edge-triggered mode
+											and won't get a notification again for the same
+											data. */
+
+											readDataFromClient(events[i].data.fd);
+
+										}
+									}
+								}
 							}
-							else{
-								usleep(5000);
-							}
+							else
+							{
+								this->debug("Server socket epoll_ctl error");
+								onStartingFinish(false);
 
+							}
 						}
-					}
+						else
+						{
+							this->debug("Server socket epoll_create1 error");
+							onStartingFinish(false);
+						}
+            		}
 					else
 					{
 						this->debug("Failure to open socket");
@@ -233,6 +284,72 @@
 
 				//n = read(newsockfd,buffer,255);
 				//n = write(newsockfd,"I got your message",18);
+		}
+
+		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket)
+		{
+			//int reuse_opt = 1;
+								
+			//setsockopt(theSocket, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int));
+			//fcntl(theSocket, F_SETFL, O_NONBLOCK);
+			
+			//creat ea new client
+			ClientInfo *client = new ClientInfo();
+			client->socketHandle = theSocket;
+			client->server = this;
+			client->socket = theSocket;
+			ip_str = new char[255];
+			inet_ntop(AF_INET, &cli_addr->sin_addr, ip_str, 255);
+			client->address = string(ip_str);
+			delete[] ip_str;
+			client->port = ntohs(cli_addr->sin_port);
+			client->cli_addr = *cli_addr;
+
+			connectClientsMutext.lock();
+			this->connectedClients[theSocket] = client;
+			connectClientsMutext.unlock();
+			this->notifyListeners_connEvent(client, CONN_EVENT::CONNECTED);
+		}
+
+
+		void readDataFromClient(int socket)
+		{
+			int bufferSize = _CONF_READ_BUFFER_SIZE;
+			char readBuffer[bufferSize]; //10k buffer
+
+			bool done = false;
+			ssize_t count;
+
+			while (true)
+			{
+
+				count = read (events[i].data.fd, readBuffer, sizeof readBuffer);
+				if (count > 0)
+					this->notifyListeners_dataReceived(client, , count);
+				else if (count == 0)
+				{
+					this->debug("Error reading data from client");
+					//done = true;
+					break;
+				}
+				else{
+					this->debug("General error opening socket");
+					if (errno != EAGAIN)
+					{
+						done = true;
+					}
+					break;
+				}
+			}
+			if (done)
+			{
+				printf ("Closed connection on descriptor %d\n",
+						socket);
+
+				/* Closing the descriptor will make epoll remove it
+					from the set of descriptors which are monitored. */
+				close (socket);
+			}
 		}
 
 		void TCPServerLib::TCPServer::clientsCheckLoop()
@@ -308,15 +425,14 @@
 
 		void TCPServerLib::TCPServer::chatWithClient(ClientInfo *client, int ammountToRead)
 		{
-			int bufferSize = _CONF_READ_BUFFER_SIZE;
-			char readBuffer[bufferSize]; //10k buffer
+			
 
 			ammountToRead = ammountToRead > bufferSize ? bufferSize : ammountToRead;
 
 			auto readCount = recv(client->socket,readBuffer, ammountToRead, 0);
 			if (readCount > 0)
 			{
-				this->notifyListeners_dataReceived(client, readBuffer, readCount);
+				
 			}
 		}
 
