@@ -1,20 +1,22 @@
-# Event TCPServer Library
-Thi is an event based TCP Server. This server do not use async I/O yet or LibEvent. I wrote this code to be compiled in a system that does't support LibEvent.
+# About
+This is an event based TCP Server that uses epoll to wait connections and data. When data is read from sockets, this data retransmited to you application through an event based interface.
+
+The libraray contains helpful methods to read and write data as c++ strigns.
 
 # Using
-To Use this library, you can copy the .cpp and .h files to your project or add this repository as a submodule of your project.
+To Use this library, you can copy the .cpp and .h files or add this repository as a submodule of your project.
 
 # Where is the main.cpp?
-This project is a library, so I don't provide a main file to test it. Instead, I wrote a projet to do unity tests in the classes and function.
+This project is a library, so I don't provide a main file to test it. Instead, I wrote a projet to do unity tests classes and functions.
 You can enter in the folder 'tests' and run the command 'make all'. After run this command, a file located in tests/build, named 'tests', will
 be generated. This file (tests/build/tests) is a binary file that run some tests. 
 
-Along with this code, there is a ".vscode" folder that contains some configurations for the Visual Studio Code. If you use VSCode, you can compile the tests program direclty from the 'Debug' section of this IDE.
+Along with this code, there is a ".vscode" folder that contains some configurations for the Visual Studio Code. If you use VSCode, you can compile the tests direclty from the 'Debug' section.
 
 # dependencies
 This library depends of a thread pool libraty, that was written by me. If you make a recursive git clone of this project, you shouldn't have problema with this dependency. But if you choose to clone allow the repository, you should also clone this thread pool library and adjust the include int the 'TCPServer.h' file.
 
-The trhead pool library is in: https://github.com/rafinhatonello/ThreadPool
+The trhead pool library is in: https://github.com/rafael-tonello/ThreadPool
 
 # Using
 
@@ -113,6 +115,4 @@ void startMyServer(){
 }
 ```
 
-# Main task List
-charaters to be used ✔ ✘
  
