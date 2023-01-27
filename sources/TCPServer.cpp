@@ -87,16 +87,11 @@
 			//IMPORTANT: if disconnected, the 'client' must be destroyed here (or in the function that calls this function);
 		}
 
-		void TCPServerLib::TCPServer::initialize(vector<int> ports, ThreadPool* tasker, StartResultFunc on_start_done)
+		void TCPServerLib::TCPServer::initialize(vector<int> ports, StartResultFunc on_start_done)
 		{
 			this->running = true;
 			this->nextLoopWait = _CONF_DEFAULT_LOOP_WAIT;
 			this->connectedClients.clear();
-
-			if (tasker == NULL)
-				tasker = new ThreadPool();
-
-			this->__tasks = tasker;
 
 			atomic<int> numStarted;
 			numStarted = 0;
@@ -419,17 +414,17 @@
 	#pragma region public functions
 
 
-	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, ThreadPool *tasker)
+	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess)
 	{
 		vector<int> ports = {port};
-		this->initialize(ports, tasker, [&](vector<int> sucess, vector<int> failure){
+		this->initialize(ports, [&](vector<int> sucess, vector<int> failure){
 			startedWithSucess = sucess.size() > 0;
 		});
 	}
 
-	TCPServerLib::TCPServer::TCPServer(vector<int> ports, ThreadPool *tasker, StartResultFunc on_start_done)
+	TCPServerLib::TCPServer::TCPServer(vector<int> ports, StartResultFunc on_start_done)
 	{
-		this->initialize(ports, tasker, on_start_done);
+		this->initialize(ports, on_start_done);
 	}
 
 	TCPServerLib::TCPServer::~TCPServer()
@@ -483,12 +478,7 @@
 		}
 
 		for (int c = 0; c < clientList->size(); c++)
-		{
-			this->__tasks->enqueue([data, size](ClientInfo* p){
-				p->sendData(data, size);
-			
-			}, (*clientList)[c]);
-		}
+			(*clientList)[c]->sendData(data, size);
 
 		if (clearList)
 		{

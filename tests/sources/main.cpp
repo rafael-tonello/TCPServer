@@ -42,8 +42,4 @@ int main(int argc, char* argv[]){
     }
 
     Tester::runTests(testers, argc, argv);
-
-
-    while (true)
-        usleep (100000);
 }
