@@ -138,7 +138,7 @@
 			struct epoll_event event;
   			struct epoll_event *events;
 			int status;
-			socklen_t clientSize;
+			socklen_t clientSize = sizeof(cli_addr);;
 			char *ip_str;
 
 
