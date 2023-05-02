@@ -367,7 +367,7 @@
 				else if (count == 0)
 				{
 					this->debug("Error reading data from client");
-					//done = true;
+					done = true;
 					break;
 				}
 				else{
