@@ -378,7 +378,8 @@
 					break;
 				}
 			}
-			if (done)
+			
+			if (done ||  connectedClients.count(socket)== 0 || !isConnected(connectedClients[socket]))
 			{
 				clientSocketDisconnected(socket);
 			}
