@@ -333,6 +333,8 @@
 			connectClientsMutext.lock();
 			this->connectedClients.erase(theSocket);
 			connectClientsMutext.unlock();
+
+			delete client;
 		}
 
 
