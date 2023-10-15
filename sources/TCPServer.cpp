@@ -328,13 +328,13 @@
 
 			ClientInfo *client = connectedClients[theSocket];
 
-			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
-
 			connectClientsMutext.lock();
 			this->connectedClients.erase(theSocket);
 			connectClientsMutext.unlock();
 
-			delete client;
+			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
+			if (deleteClientesAfterDisconnection)
+				delete client;
 		}
 
 
@@ -347,7 +347,7 @@
 			ssize_t count;
 
 
-			while (true)
+			while (__SocketIsConnected(socket))
 			{
 
 				count = read (socket, readBuffer, sizeof readBuffer);
@@ -374,9 +374,7 @@
 				}
 				else{
 					if (errno != EAGAIN)
-					{
 						done = true;
-					}
 					break;
 				}
 			}
@@ -417,16 +415,20 @@
 	#pragma region public functions
 
 
-	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess)
+	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
+		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
 		vector<int> ports = {port};
 		this->initialize(ports, [&](vector<int> sucess, vector<int> failure){
 			startedWithSucess = sucess.size() > 0;
 		});
+
+
 	}
 
-	TCPServerLib::TCPServer::TCPServer(vector<int> ports, StartResultFunc on_start_done)
+	TCPServerLib::TCPServer::TCPServer(vector<int> ports, StartResultFunc on_start_done, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
+		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
 		this->initialize(ports, on_start_done);
 	}
 
@@ -447,14 +449,20 @@
 		}
 
 		if (connectedClients.count(client->socket) > 0)
+		{
 			if (__SocketIsConnected(client->socket))
 			{
 				auto bytesWrite = send(client->socket, data, size, 0);
 			}
-			else
-				cout << "Try sendind data to disconnected client" << endl;
+			else{
+				//client is disconnected, but it disconnection was not detected before. If it happens, the lib heave a bug! :D
+				//so, make de disconectio nprocess here
+				cerr << "Try sendind data to disconnected client." << endl;
+				clientSocketDisconnected(client->socket);
+			}
+		}
 		else
-			cout << "Try sendind data to unknown client" << endl;
+			cerr << "Try sendind data to unknown client" << endl;
 		connectClientsMutext.unlock();
 		
 		client->writeMutex.unlock();

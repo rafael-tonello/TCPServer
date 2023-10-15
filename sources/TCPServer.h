@@ -110,6 +110,8 @@ namespace TCPServerLib
             const int _CONF_DEFAULT_LOOP_WAIT = 500;
             const int _CONF_READ_BUFFER_SIZE = 10240;
 
+            bool deleteClientesAfterDisconnection = true;
+
             std::atomic<bool> running;
             std::atomic<int> nextLoopWait;
             
@@ -131,8 +133,8 @@ namespace TCPServerLib
         public:
             map<string, void*> tags;
             
-            TCPServer(int port, bool &startedWithSucess);
-            TCPServer(vector<int> ports, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
+            TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection = true);
+            TCPServer(vector<int> ports, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){}, bool AutomaticallyDeleteClientesAfterDisconnection = true);
             ~TCPServer();
 
             bool isConnected(ClientInfo *client);
