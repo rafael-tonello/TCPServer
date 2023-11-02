@@ -438,7 +438,8 @@
 	}
 
 	void TCPServerLib::TCPServer::sendData(ClientInfo *client, char* data, size_t size)
-	{ 
+	{
+
 		client->writeMutex.lock();
 		connectClientsMutext.lock();
 
@@ -458,6 +459,7 @@
 				//client is disconnected, but it disconnection was not detected before. If it happens, the lib heave a bug! :D
 				//so, make de disconectio nprocess here
 				cerr << "Try sendind data to disconnected client." << endl;
+				connectClientsMutext.unlock();
 				clientSocketDisconnected(client->socket);
 			}
 		}
