@@ -187,7 +187,7 @@
 									epoll_ctl_result = epoll_ctl (efd, EPOLL_CTL_ADD, listener, &event);
 											
 											
-									foundEvents = epoll_wait (efd, events, MAXEVENTS, -1);
+									foundEvents = epoll_wait (efd, events, MAXEVENTS, 1000);
 
 									
       								for (auto i = 0; i < foundEvents; i++)
@@ -248,7 +248,6 @@
 											data. */
 
 											readDataFromClient(events[i].data.fd);
-
 										}
 									}
 								}
