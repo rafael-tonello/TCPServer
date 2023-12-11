@@ -26,6 +26,9 @@
     #include <signal.h>
     #include <arpa/inet.h>
     #include <sys/epoll.h>
+
+    #include <openssl/ssl.h>
+    #include <openssl/err.h>
 #pragma endregion
 #include <ThreadPool.h>
 
@@ -79,6 +82,8 @@ namespace TCPServerLib
             void sendString(string data);
             bool isConnected();
             void disconnect();
+            bool sslTlsEnabled;
+            SSL *cSsl;
 
             atomic<bool> __reading;
 
@@ -97,10 +102,13 @@ namespace TCPServerLib
             }
     };
 
-    
-
-    using StartResultFunc = function<void(vector<int> startedPorts, vector<int> failedStartPorts)>;
     class TCPServer: public SocketHelper{
+        public: struct PortConf{
+            int port;
+            bool ssl_tls = false;
+            string private_cert = "";
+            string public_cert = "";
+        };
         private:
         #ifdef __TESTING__
             public: 
@@ -112,6 +120,8 @@ namespace TCPServerLib
 
             bool deleteClientesAfterDisconnection = true;
 
+            bool sslWasInited = false;
+
             std::atomic<bool> running;
             std::atomic<int> nextLoopWait;
             
@@ -120,22 +130,38 @@ namespace TCPServerLib
             vector<thread*> listenThreads;
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
-            void initialize(vector<int> ports, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){});
-            void waitClients(int port, function<void(bool sucess)> onStartingFinish);
+            void waitClients(PortConf portConf, function<void(bool sucess)> onStartingFinish);
             void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
             bool __SocketIsConnected( int socket);
             bool SetSocketBlockingEnabled(int fd, bool blocking);
 
-            void clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr);
+            void clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr, bool sslTls = false, SSL* ssl = NULL);
             void clientSocketDisconnected(int theSocket);
-            void readDataFromClient(int socket);
+            void readDataFromClient(int socket, bool usingSsl_tls, SSL* ssl_obj);
 
+            void ssl_init();
+            void ssl_stop();
         public:
             map<string, void*> tags;
             
             TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection = true);
-            TCPServer(vector<int> ports, StartResultFunc on_start_done = [](vector<int> s, vector<int> f){}, bool AutomaticallyDeleteClientesAfterDisconnection = true);
+
+            /**
+             * @brief Construct a new TCPServer object. To start listen, use 'startListen' method
+             * 
+             * @param AutomaticallyDeleteClientesAfterDisconnection 
+             */
+            TCPServer(bool autoDeleteClientsAfterDisconnection);
+
+            /**
+             * @brief Construct a new TCPServer object. To start listen, use 'startListen' method
+             * 
+             */
+            TCPServer();
             ~TCPServer();
+
+            struct startListen_Result{ vector<PortConf> startedPorts; vector<PortConf> failedPorts; };
+            startListen_Result startListen(vector<PortConf> portConfs);
 
             bool isConnected(ClientInfo *client);
 

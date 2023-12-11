@@ -1,5 +1,3 @@
-
-
 #include "TCPServer.h"
 
 #pragma region SocketHelper class
@@ -87,28 +85,27 @@
 			//IMPORTANT: if disconnected, the 'client' must be destroyed here (or in the function that calls this function);
 		}
 
-		void TCPServerLib::TCPServer::initialize(vector<int> ports, StartResultFunc on_start_done)
+		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<PortConf> ports)
 		{
+			startListen_Result result;
+
 			this->running = true;
 			this->nextLoopWait = _CONF_DEFAULT_LOOP_WAIT;
 			this->connectedClients.clear();
 
 			atomic<int> numStarted;
 			numStarted = 0;
-			vector<int> sucessPorts;
-			vector<int> errorPorts;
 
 			for (auto &p: ports)
 			{
-				thread *th = new thread([&](int _p){
+				thread *th = new thread([&](PortConf _p){
 					this->waitClients(_p, [&](bool sucess)
 					{ 
-						numStarted++;
 						if (sucess)
-							sucessPorts.push_back(_p);
+							result.startedPorts.push_back(_p);
 						else
-							errorPorts.push_back(_p);
-
+							result.failedPorts.push_back(_p);
+						numStarted++;
 					});
 				}, p);
 
@@ -123,11 +120,13 @@
 			while (numStarted < ports.size())
 				usleep(100);
 
-			on_start_done(sucessPorts, errorPorts);
+			return result;
 		}
 
-		void TCPServerLib::TCPServer::waitClients(int port, function<void(bool sucess)> onStartingFinish)
+		void TCPServerLib::TCPServer::waitClients(PortConf portConf, function<void(bool sucess)> onStartingFinish)
 		{
+			if (portConf.ssl_tls)
+				TCPServerLib::TCPServer::ssl_init();
 			//create an socket to await for connections
 
 			int listener, efd, epoll_ctl_result, foundEvents;
@@ -140,6 +139,9 @@
 			int status;
 			socklen_t clientSize = sizeof(cli_addr);;
 			char *ip_str;
+
+			SSL_CTX *sslctx = NULL;
+			SSL *cSSL = NULL;
 
 
 			listener = socket(AF_INET, SOCK_STREAM, 0);
@@ -155,7 +157,7 @@
 
 				serv_addr->sin_family = AF_INET;
 				serv_addr->sin_addr.s_addr = INADDR_ANY;
-				serv_addr->sin_port = htons(port);
+				serv_addr->sin_port = htons(portConf.port);
 
 				usleep(1000);
 				status = bind(listener, (struct sockaddr *) serv_addr, sizeof(*serv_addr));
@@ -192,6 +194,7 @@
 									
       								for (auto i = 0; i < foundEvents; i++)
 									{
+										cout << portConf.port << ": There is someting to process " << endl;
 										if ((events[i].events & EPOLLERR) ||
 												(events[i].events & EPOLLHUP) ||
 												(!(events[i].events & EPOLLIN)))
@@ -213,11 +216,33 @@
 												if (theSocket >= 0)
 												{
 													SetSocketBlockingEnabled(theSocket, false);
+
+													if (portConf.ssl_tls)
+													{
+														sslctx = SSL_CTX_new( SSLv23_server_method());
+														SSL_CTX_set_options(sslctx, SSL_OP_SINGLE_DH_USE);
+														
+														int use_cert = SSL_CTX_use_certificate_file(sslctx, portConf.public_cert.c_str() , SSL_FILETYPE_PEM);
+
+														int use_prv = SSL_CTX_use_PrivateKey_file(sslctx, portConf.private_cert.c_str(), SSL_FILETYPE_PEM);
+
+														cSSL = SSL_new(sslctx);
+														SSL_set_fd(cSSL, theSocket);
+														//Here is the SSL Accept portion.  Now all reads and writes must use SSL
+														auto ssl_err = SSL_accept(cSSL);
+														if(ssl_err <= 0)
+														{
+															//Error occurred, log and close down ssl
+															//ShutdownSSL();
+														}
+													}
+
+
 													event.data.fd = theSocket;
 													event.events = EPOLLIN | EPOLLET;
 													auto tmpResult = epoll_ctl (efd, EPOLL_CTL_ADD, theSocket, &event);
 													if (tmpResult != -1)
-														clientSocketConnected(theSocket, cli_addr);
+														clientSocketConnected(theSocket, cli_addr, portConf.ssl_tls, cSSL);
 													else
 													{
 														this->debug("Client epoll_ctl error");
@@ -247,10 +272,16 @@
 											and won't get a notification again for the same
 											data. */
 
-											readDataFromClient(events[i].data.fd);
+											readDataFromClient(events[i].data.fd, portConf.ssl_tls, cSSL);
 										}
+
+										cout << portConf.port << ": Processing done " << endl;
 									}
 								}
+								
+								SSL_shutdown(cSSL);
+    							SSL_free(cSSL);
+
 
 								free (events);
 								close (listener);
@@ -290,7 +321,7 @@
 				//n = write(newsockfd,"I got your message",18);
 		}
 
-		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr)
+		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr, bool sslTls, SSL* ssl)
 		{
 			//int reuse_opt = 1;
 								
@@ -302,6 +333,8 @@
 			client->socketHandle = theSocket;
 			client->server = this;
 			client->socket = theSocket;
+			client->sslTlsEnabled = sslTls;
+			client->cSsl = ssl;
 			char *ip_str = new char[255];
 			inet_ntop(AF_INET, &cli_addr->sin_addr, ip_str, 255);
 			client->address = string(ip_str);
@@ -337,7 +370,7 @@
 		}
 
 
-		void TCPServerLib::TCPServer::readDataFromClient(int socket)
+		void TCPServerLib::TCPServer::readDataFromClient(int socket, bool usingSsl_tls, SSL* ssl_obj)
 		{
 			int bufferSize = _CONF_READ_BUFFER_SIZE;
 			char readBuffer[bufferSize]; //10k buffer
@@ -349,7 +382,10 @@
 			while (__SocketIsConnected(socket))
 			{
 
-				count = read (socket, readBuffer, sizeof readBuffer);
+				if (usingSsl_tls)
+					count = SSL_read (ssl_obj, readBuffer, sizeof readBuffer);
+				else
+					count = read (socket, readBuffer, sizeof readBuffer);
 				//count = recv(socket,readBuffer, sizeof readBuffer, 0);
 				if (count > 0)
 				{
@@ -409,6 +445,24 @@
 			}
 		}
 
+		void TCPServerLib::TCPServer::ssl_init()
+		{
+			if (!sslWasInited)
+			{
+				SSL_load_error_strings();
+				SSL_library_init();			
+				OpenSSL_add_all_algorithms();
+				sslWasInited = true;
+			}
+		}
+
+		void TCPServerLib::TCPServer::ssl_stop()
+		{
+			ERR_free_strings();
+    		EVP_cleanup();
+		}
+
+
 	#pragma endregion
 
 	#pragma region public functions
@@ -417,23 +471,31 @@
 	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
 		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
-		vector<int> ports = {port};
-		this->initialize(ports, [&](vector<int> sucess, vector<int> failure){
-			startedWithSucess = sucess.size() > 0;
-		});
+		vector<PortConf> ports = {PortConf{.port = port}};
+		auto startResult = this->startListen(ports);
 
-
+		startedWithSucess = startResult.startedPorts.size() > 0;
 	}
 
-	TCPServerLib::TCPServer::TCPServer(vector<int> ports, StartResultFunc on_start_done, bool AutomaticallyDeleteClientesAfterDisconnection)
+	TCPServerLib::TCPServer::TCPServer(bool autoDeleteClientsAfterDisconnection)
 	{
-		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
-		this->initialize(ports, on_start_done);
+		vector<PortConf> portConfs;
+		this->deleteClientesAfterDisconnection = autoDeleteClientsAfterDisconnection;
+	}
+
+	TCPServerLib::TCPServer::TCPServer()
+	{
+		
 	}
 
 	TCPServerLib::TCPServer::~TCPServer()
 	{
 		this->running = false;
+		if (sslWasInited)
+		{
+			usleep(10000); //needs to wati the sockets shutdown
+			ssl_stop();
+		}
 	}
 
 	void TCPServerLib::TCPServer::sendData(ClientInfo *client, char* data, size_t size)
@@ -452,7 +514,10 @@
 		{
 			if (__SocketIsConnected(client->socket))
 			{
-				auto bytesWrite = send(client->socket, data, size, 0);
+				if (client->sslTlsEnabled)
+					SSL_write(client->cSsl, data, size);
+				else
+					send(client->socket, data, size, 0);
 			}
 			else{
 				//client is disconnected, but it disconnection was not detected before. If it happens, the lib heave a bug! :D
@@ -612,6 +677,8 @@
 	{
 		return this->receiveListeners_s.size();
 	}
+
+	
 
 	
 
