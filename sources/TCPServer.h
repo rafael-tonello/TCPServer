@@ -29,6 +29,7 @@
 
     #include <openssl/ssl.h>
     #include <openssl/err.h>
+    #include <netinet/tcp.h>
 #pragma endregion
 #include <ThreadPool.h>
 

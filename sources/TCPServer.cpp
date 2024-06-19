@@ -148,12 +148,15 @@
 
 			if (listener >= 0)
 			{
+				//reuse address
 				int reuse = 1;
 				if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0)
-				this->debug("setsockopt(SO_REUSEADDR) failed");
-				//fill(std::begin(serv_addr), std::end(serv_addr), T{});
-				//bzero((char *) &serv_addr, sizeof(serv_addr));
-				//setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (char *) &iOptVal, &iOptLen);
+					this->debug("setsockopt(SO_REUSEADDR) failed");
+
+				//no delay (disable Nagle's algorithm)
+				int value = 1;
+				if (setsockopt(listener, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(int)))
+					this->debug("setsockopt(TCP_NODELAY) failed");
 
 				serv_addr->sin_family = AF_INET;
 				serv_addr->sin_addr.s_addr = INADDR_ANY;
@@ -174,6 +177,7 @@
 						{
 							event.data.fd = listener;
   							event.events = EPOLLIN | EPOLLET;
+							
 							epoll_ctl_result = epoll_ctl (efd, EPOLL_CTL_ADD, listener, &event);
 
 							if (epoll_ctl_result != -1)
@@ -186,7 +190,6 @@
 								{
 									event.data.fd = listener;
   									event.events = EPOLLIN | EPOLLET;
-									epoll_ctl_result = epoll_ctl (efd, EPOLL_CTL_ADD, listener, &event);
 											
 											
 									foundEvents = epoll_wait (efd, events, MAXEVENTS, 1000);
@@ -194,7 +197,6 @@
 									
       								for (auto i = 0; i < foundEvents; i++)
 									{
-										cout << portConf.port << ": There is someting to process " << endl;
 										if ((events[i].events & EPOLLERR) ||
 												(events[i].events & EPOLLHUP) ||
 												(!(events[i].events & EPOLLIN)))
@@ -212,7 +214,7 @@
 											while (1)
 											{
 												int theSocket = accept(listener, (struct sockaddr *) cli_addr, &clientSize);
-															//int client = accept(listener, 0, 0);
+
 												if (theSocket >= 0)
 												{
 													SetSocketBlockingEnabled(theSocket, false);
@@ -274,8 +276,6 @@
 
 											readDataFromClient(events[i].data.fd, portConf.ssl_tls, cSSL);
 										}
-
-										cout << portConf.port << ": Processing done " << endl;
 									}
 								}
 								
@@ -316,17 +316,10 @@
 				this->debug("General error opening socket");
 				onStartingFinish(false);
 			}
-
-				//n = read(newsockfd,buffer,255);
-				//n = write(newsockfd,"I got your message",18);
 		}
 
 		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr, bool sslTls, SSL* ssl)
 		{
-			//int reuse_opt = 1;
-								
-			//setsockopt(theSocket, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int));
-			//fcntl(theSocket, F_SETFL, O_NONBLOCK);
 			
 			//creat ea new client
 			ClientInfo *client = new ClientInfo();
@@ -353,7 +346,7 @@
 			close (theSocket);
 			if (connectedClients.count(theSocket) == 0)
 			{
-				//this->debug("Detect a disconnection of a not connected client !!!!!!!!!!!!!!!!!!!");
+				this->debug("Detect a disconnection of a not connected client!");
 				//clientSocketConnected(theSocket);
 				return;
 			}
@@ -392,7 +385,7 @@
 						
 					if (connectedClients.count(socket) == 0)
 					{
-						this->debug("reading data from a not connect client!!!!!!!!!!!!!!!!!!!");
+						this->debug("reading data from a not connect client!");
 						//clientSocketConnected(socket);
 						return;
 					}
