@@ -1,3 +1,0 @@
-[submodule "sources/ThreadPool"]
-	path = sources/ThreadPool
-	url = https://github.com/rafinhatonello/ThreadPool

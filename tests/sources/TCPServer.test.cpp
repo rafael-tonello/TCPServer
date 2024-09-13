@@ -109,7 +109,7 @@ void TCPServerTester::run(string context)
 
 future<string> TCPServerTester::readSocket(int socket, uint timeout_ms)
 {
-    return th.enqueue([](int socket2, uint timeout_ms2){
+    thread th([](int socket2, uint timeout_ms2){
         auto start = std::chrono::system_clock::now();
         double elaspedTime = 0.f;
         char data[1024*1024]; //1k buffer
@@ -128,11 +128,13 @@ future<string> TCPServerTester::readSocket(int socket, uint timeout_ms)
         string ret = string(data, readCount);
         return ret;
     }, socket, timeout_ms);
+
+    th.detach();
 }
 
 future<int> TCPServerTester::connectToServcer(string host, int port)
 {
-    return th.enqueue([](string _host, int _port){
+    thread th([](string _host, int _port){
         int sock = 0;
         if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
         {
@@ -160,5 +162,7 @@ future<int> TCPServerTester::connectToServcer(string host, int port)
 
         return sock;
     }, host, port);
+
+    th.detach();
 }
 

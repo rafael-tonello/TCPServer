@@ -12,8 +12,9 @@
 #include <pthread.h>
 #include <iostream>
 #include <vector>
-#include <ThreadPool.h>
 #include <string>
+#include <mutex>
+#include <atomic>
 #pragma region include for networking
     #include <sys/types.h>
     #include <fcntl.h>
@@ -32,7 +33,6 @@
     #include <openssl/err.h>
     #include <netinet/tcp.h>
 #pragma endregion
-#include <ThreadPool.h>
 
 namespace TCPServerLib
 {

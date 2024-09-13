@@ -13,7 +13,6 @@
 using namespace TCPServerLib;
 class TCPServerTester: public Tester{
 private:
-    ThreadPool th;
     future<int> connectToServcer(string host, int port);
     future<string> readSocket(int socket, uint timeout_ms);
 public:
