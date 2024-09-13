@@ -83,12 +83,12 @@ namespace TCPServerLib
         int port;
 
         //ip = "" means all interfaces
-        TCPServer_PortConf(int port, string ip=""): ip(ip), port(port){}
+        TCPServer_PortConf(int port, string ip="", bool enableSslTls = false, string privateCertificateFile="", string publicCertificateFile="");
     };
 
     class TCPServer_UnixSocketConf: public TCPServer_SocketInputConf{ public:
         string path;
-        TCPServer_UnixSocketConf(string path): path(path){}
+        TCPServer_UnixSocketConf(string path, bool enableSslTls = false, string privateCertificateFile="", string publicCertificateFile="");
     };
 
     class ClientInfo: public SocketHelper{

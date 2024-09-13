@@ -41,6 +41,24 @@
 	}
 #pragma endregion
 
+#pragma region TCPServer_SocketInputConf class
+	TCPServerLib::TCPServer_PortConf::TCPServer_PortConf(int port, string ip, bool enableSslTls, string privateCertificateFile, string publicCertificateFile)
+	{
+		this->port = port;
+		this->ip = ip;
+		this->ssl_tls = enableSslTls;
+		this->private_cert = privateCertificateFile;
+		this->public_cert = publicCertificateFile;
+	}
+
+	TCPServerLib::TCPServer_UnixSocketConf::TCPServer_UnixSocketConf(string path, bool enableSslTls, string privateCertificateFile, string publicCertificateFile)
+	{
+		this->path = path;
+		this->ssl_tls = enableSslTls;
+		this->private_cert = privateCertificateFile;
+		this->public_cert = publicCertificateFile;
+	}
+
 #pragma region TCPServer class
 	#pragma region private functions
 		void TCPServerLib::TCPServer::notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size)
@@ -536,12 +554,6 @@
 		client->writeMutex.lock();
 		connectClientsMutext.lock();
 
-		if (client->socket == 21)
-		{
-			int b = 10;
-			int c = b;
-		}
-
 		if (connectedClients.count(client->socket) > 0)
 		{
 			if (__SocketIsConnected(client->socket))
@@ -657,7 +669,6 @@
 
 	#pragma endregion
 #pragma endregion
-
 
 #pragma region ClientInfo class
 
