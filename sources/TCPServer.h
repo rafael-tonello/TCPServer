@@ -21,6 +21,7 @@
     #include <errno.h>
     #include <netdb.h>
     #include <netinet/in.h>
+    #include <sys/un.h>
     #include <sys/socket.h>
     #include <sys/ioctl.h>
     #include <signal.h>
@@ -55,14 +56,39 @@ namespace TCPServerLib
             int socketHandle;
             map<string, string> tags;
 
+            //liten to data received. The function will be called with raw data (char*) and its size. The id of 
+            //observation is returned and could be used to stop listening
             int addReceiveListener(function<void(ClientInfo *client, char* data,  size_t size)> onReceive);
             void removeListener(int id);
+
+            //liten to data received. The function will be called with the data in a string format. The id of
+            //observation is returned and could be used to stop listening
             int addReceiveListener_s(function<void(ClientInfo *client, string data)> onReceive);
             void removeListener_s(int id);
+
+            //listen to connection events. The function will be called with the client and the event. The id of
+            //observation is returned and could be used to stop listening
             int addConEventListener(function<void(ClientInfo *client, CONN_EVENT event)> onConEvent);
             void removeConEventListener(int id);
+    };
 
+    class SocketInputConf { public:
+        bool ssl_tls = false;
+        string private_cert = "";
+        string public_cert = "";
+    };
 
+    class PortConf: public SocketInputConf{ public:
+        string ip;
+        int port;
+
+        //ip = "" means all interfaces
+        PortConf(int port, string ip=""): ip(ip), port(port){}
+    };
+
+    class UnixSocketConf: public SocketInputConf{ public:
+        string path;
+        UnixSocketConf(string path): path(path){}
     };
 
     class ClientInfo: public SocketHelper{
@@ -76,8 +102,8 @@ namespace TCPServerLib
             TCPServer *server;
 
             string address;
-            int port;
-            sockaddr_in cli_addr;
+            SocketInputConf inputSocketInfo;
+            sockaddr cli_addr;
 
             void sendData(char* data, size_t size);
             void sendString(string data);
@@ -104,12 +130,6 @@ namespace TCPServerLib
     };
 
     class TCPServer: public SocketHelper{
-        public: struct PortConf{
-            int port;
-            bool ssl_tls = false;
-            string private_cert = "";
-            string public_cert = "";
-        };
         private:
         #ifdef __TESTING__
             public: 
@@ -131,12 +151,12 @@ namespace TCPServerLib
             vector<thread*> listenThreads;
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
-            void waitClients(PortConf portConf, function<void(bool sucess)> onStartingFinish);
+            void waitClients(SocketInputConf portConf, function<void(bool sucess)> onStartingFinish);
             void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
             bool __SocketIsConnected( int socket);
             bool SetSocketBlockingEnabled(int fd, bool blocking);
 
-            void clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr, bool sslTls = false, SSL* ssl = NULL);
+            void clientSocketConnected(int theSocket, struct sockaddr *cli_addr, bool sslTls = false, SSL* ssl = NULL);
             void clientSocketDisconnected(int theSocket);
             void readDataFromClient(int socket, bool usingSsl_tls, SSL* ssl_obj);
 
@@ -145,7 +165,13 @@ namespace TCPServerLib
         public:
             map<string, void*> tags;
             
+            //start the server and listen to the port. If the port is already in use, the 'startedWithSucess' will be false.
+            //Calls startListen function with a single port
             TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection = true);
+
+            //start the server and listen to a unix socket. If the socket is already in use, the 'startedWithSucess' will be false.
+            //Calls startListen function with a single unix socket
+            TCPServer(string unixsocketpath, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection = true);
 
             /**
              * @brief Construct a new TCPServer object. To start listen, use 'startListen' method
@@ -161,17 +187,26 @@ namespace TCPServerLib
             TCPServer();
             ~TCPServer();
 
-            struct startListen_Result{ vector<PortConf> startedPorts; vector<PortConf> failedPorts; };
-            startListen_Result startListen(vector<PortConf> portConfs);
+            struct startListen_Result{ vector<SocketInputConf> startedPorts; vector<SocketInputConf> failedPorts; };
+            //star listen in the 'portConfs' ports/unix sockets. You can mix ports and unix sockets in the same call
+            startListen_Result startListen(vector<SocketInputConf> portConfs);
 
             bool isConnected(ClientInfo *client);
 
             void disconnect(ClientInfo *client);
+
+            //disconnect all clients
             void disconnectAll(vector<ClientInfo*> *clientList = NULL);
 
             void sendData(ClientInfo *client, char* data, size_t size);
             void sendString(ClientInfo *client, string data);
+
+            //send data to 'clientList' or to all connected clients. Receives raw data (char *) and its size.
+            //If clienList is NULL, all connected clients will receive the data
             void sendBroadcast(char* data, size_t size, vector<ClientInfo*> *clientList = NULL);
+
+            //send data to 'clientList' or all connected clients. Receives a string.
+            //If clienList is NULL, all connected clients will receive the data
             void sendBroadcast(string data, vector<ClientInfo*> *clientList = NULL);
 
     };

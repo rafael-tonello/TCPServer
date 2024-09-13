@@ -85,7 +85,7 @@
 			//IMPORTANT: if disconnected, the 'client' must be destroyed here (or in the function that calls this function);
 		}
 
-		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<PortConf> ports)
+		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<SocketInputConf> ports)
 		{
 			startListen_Result result;
 
@@ -98,7 +98,7 @@
 
 			for (auto &p: ports)
 			{
-				thread *th = new thread([&](PortConf _p){
+				thread *th = new thread([&](SocketInputConf _p){
 					this->waitClients(_p, [&](bool sucess)
 					{ 
 						if (sucess)
@@ -123,7 +123,7 @@
 			return result;
 		}
 
-		void TCPServerLib::TCPServer::waitClients(PortConf portConf, function<void(bool sucess)> onStartingFinish)
+		void TCPServerLib::TCPServer::waitClients(SocketInputConf portConf, function<void(bool sucess)> onStartingFinish)
 		{
 			if (portConf.ssl_tls)
 				TCPServerLib::TCPServer::ssl_init();
@@ -133,7 +133,8 @@
 			int MAXEVENTS = 128;
 
 			struct sockaddr_in *serv_addr = new sockaddr_in();
-			struct sockaddr_in *cli_addr = new sockaddr_in();
+			struct sockaddr_un *serv_addr_unix = new sockaddr_un();
+			struct sockaddr *cli_addr = new sockaddr();
 			struct epoll_event event;
   			struct epoll_event *events;
 			int status;
@@ -144,12 +145,16 @@
 			SSL *cSSL = NULL;
 
 
-			listener = socket(AF_INET, SOCK_STREAM, 0);
+			if (typeid(portConf) == typeid(PortConf) )
+				listener = socket(AF_INET, SOCK_STREAM, 0);
+			else
+				listener = socket(AF_UNIX, SOCK_STREAM, 0);
 
 			if (listener >= 0)
 			{
 				//reuse address
 				int reuse = 1;
+
 				if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0)
 					this->debug("setsockopt(SO_REUSEADDR) failed");
 
@@ -158,13 +163,27 @@
 				if (setsockopt(listener, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(int)))
 					this->debug("setsockopt(TCP_NODELAY) failed");
 
-				serv_addr->sin_family = AF_INET;
-				serv_addr->sin_addr.s_addr = INADDR_ANY;
-				serv_addr->sin_port = htons(portConf.port);
+				if (typeid(portConf) == typeid(PortConf) ) 
+				{
+					serv_addr->sin_family = AF_INET;
+					if (((PortConf*)&portConf)->ip == "")
+						serv_addr->sin_addr.s_addr = INADDR_ANY;
+					else
+						inet_pton(AF_INET, ((PortConf*)&portConf)->ip.c_str(), &serv_addr->sin_addr);
 
-				usleep(1000);
-				status = bind(listener, (struct sockaddr *) serv_addr, sizeof(*serv_addr));
-				usleep(1000);
+					//serv_addr->sin_addr.s_addr = INADDR_ANY;
+					serv_addr->sin_port = htons(((PortConf*)&portConf)->port);
+					usleep(1000);
+					status = bind(listener, (struct sockaddr *) serv_addr, sizeof(*serv_addr));
+					usleep(1000);
+				}
+				else
+				{
+					serv_addr_unix->sun_family = AF_UNIX;
+					strcpy(serv_addr_unix->sun_path, ((UnixSocketConf*)&portConf)->path.c_str());
+					status = bind(listener, (struct sockaddr *) serv_addr_unix, sizeof(*serv_addr_unix));
+				}
+
 				if (status >= 0)
 				{
 					SetSocketBlockingEnabled(listener, false);
@@ -318,7 +337,7 @@
 			}
 		}
 
-		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket, struct sockaddr_in *cli_addr, bool sslTls, SSL* ssl)
+		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket, struct sockaddr *cli_addr, bool sslTls, SSL* ssl)
 		{
 			
 			//creat ea new client
@@ -329,10 +348,25 @@
 			client->sslTlsEnabled = sslTls;
 			client->cSsl = ssl;
 			char *ip_str = new char[255];
-			inet_ntop(AF_INET, &cli_addr->sin_addr, ip_str, 255);
-			client->address = string(ip_str);
+			//check if cli_addr is a sockaddr_in or sockaddr_un
+			if (cli_addr->sa_family == AF_UNIX)
+			{
+				client->address = string("unixsocket:")+string(((sockaddr_un*)cli_addr)->sun_path);
+
+				UnixSocketConf inputSocketInfo(((sockaddr_un*)cli_addr)->sun_path);
+				client->inputSocketInfo = inputSocketInfo;
+			}
+			else
+			{
+				inet_ntop(AF_INET, &((sockaddr_in*)cli_addr)->sin_addr, ip_str, 255);
+				client->address = string("ip:")+string(ip_str) + ":" + to_string(ntohs(((sockaddr_in*)cli_addr)->sin_port));
+
+				PortConf inputSocketInfo(ntohs(((sockaddr_in*)cli_addr)->sin_port), string(ip_str));
+				client->inputSocketInfo = inputSocketInfo;
+			}
 			delete[] ip_str;
-			client->port = ntohs(cli_addr->sin_port);
+			
+			client->inputSocketInfo.ssl_tls = sslTls;
 			client->cli_addr = *cli_addr;
 
 			connectClientsMutext.lock();
@@ -464,15 +498,20 @@
 	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
 		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
-		vector<PortConf> ports = {PortConf{.port = port}};
-		auto startResult = this->startListen(ports);
-
+		auto startResult = this->startListen({ PortConf(port) });
 		startedWithSucess = startResult.startedPorts.size() > 0;
+	}
+
+	TCPServerLib::TCPServer::TCPServer(string unixsocketpath, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection = true)
+	{
+		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
+		auto startResult = this->startListen({ UnixSocketConf(unixsocketpath) });
+		startedWithSucess = startResult.startedPorts.size() > 0;
+		
 	}
 
 	TCPServerLib::TCPServer::TCPServer(bool autoDeleteClientsAfterDisconnection)
 	{
-		vector<PortConf> portConfs;
 		this->deleteClientesAfterDisconnection = autoDeleteClientsAfterDisconnection;
 	}
 
