@@ -48,7 +48,9 @@ CC_FLAGS=-c			\
 		 -D__TESTING__ \
 		 -std=c++11 \
 		 -I"./sources/" \
-		 -I"../sources/ThreadPool"
+		 -I"../sources/ThreadPool" \
+		 -lssl \
+		 -lcrypto \
 
 # Flags for linker
 LK_FLAGS=-W         \
@@ -60,7 +62,9 @@ LK_FLAGS=-W         \
 		 -D__TESTING__ \
 		 -std=c++11 \
 		 -I"./sources/" \
-		 -I"../sources/ThreadPool"
+		 -I"../sources/ThreadPool" \
+		 -lssl \
+		 -lcrypto \
  
 # Command used at clean target
 RM = rm -rf

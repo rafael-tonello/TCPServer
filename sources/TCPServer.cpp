@@ -502,7 +502,7 @@
 		startedWithSucess = startResult.startedPorts.size() > 0;
 	}
 
-	TCPServerLib::TCPServer::TCPServer(string unixsocketpath, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection = true)
+	TCPServerLib::TCPServer::TCPServer(string unixsocketpath, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
 		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
 		auto startResult = this->startListen({ UnixSocketConf(unixsocketpath) });
