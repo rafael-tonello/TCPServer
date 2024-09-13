@@ -85,7 +85,7 @@
 			//IMPORTANT: if disconnected, the 'client' must be destroyed here (or in the function that calls this function);
 		}
 
-		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<SocketInputConf> ports)
+		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<TCPServer_SocketInputConf> ports)
 		{
 			startListen_Result result;
 
@@ -98,7 +98,7 @@
 
 			for (auto &p: ports)
 			{
-				thread *th = new thread([&](SocketInputConf _p){
+				thread *th = new thread([&](TCPServer_SocketInputConf _p){
 					this->waitClients(_p, [&](bool sucess)
 					{ 
 						if (sucess)
@@ -123,7 +123,7 @@
 			return result;
 		}
 
-		void TCPServerLib::TCPServer::waitClients(SocketInputConf portConf, function<void(bool sucess)> onStartingFinish)
+		void TCPServerLib::TCPServer::waitClients(TCPServer_SocketInputConf portConf, function<void(bool sucess)> onStartingFinish)
 		{
 			if (portConf.ssl_tls)
 				TCPServerLib::TCPServer::ssl_init();
@@ -145,7 +145,7 @@
 			SSL *cSSL = NULL;
 
 
-			if (typeid(portConf) == typeid(PortConf) )
+			if (typeid(portConf) == typeid(TCPServer_PortConf) )
 				listener = socket(AF_INET, SOCK_STREAM, 0);
 			else
 				listener = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -163,16 +163,16 @@
 				if (setsockopt(listener, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(int)))
 					this->debug("setsockopt(TCP_NODELAY) failed");
 
-				if (typeid(portConf) == typeid(PortConf) ) 
+				if (typeid(portConf) == typeid(TCPServer_PortConf) ) 
 				{
 					serv_addr->sin_family = AF_INET;
-					if (((PortConf*)&portConf)->ip == "")
+					if (((TCPServer_PortConf*)&portConf)->ip == "")
 						serv_addr->sin_addr.s_addr = INADDR_ANY;
 					else
-						inet_pton(AF_INET, ((PortConf*)&portConf)->ip.c_str(), &serv_addr->sin_addr);
+						inet_pton(AF_INET, ((TCPServer_PortConf*)&portConf)->ip.c_str(), &serv_addr->sin_addr);
 
 					//serv_addr->sin_addr.s_addr = INADDR_ANY;
-					serv_addr->sin_port = htons(((PortConf*)&portConf)->port);
+					serv_addr->sin_port = htons(((TCPServer_PortConf*)&portConf)->port);
 					usleep(1000);
 					status = bind(listener, (struct sockaddr *) serv_addr, sizeof(*serv_addr));
 					usleep(1000);
@@ -180,7 +180,7 @@
 				else
 				{
 					serv_addr_unix->sun_family = AF_UNIX;
-					strcpy(serv_addr_unix->sun_path, ((UnixSocketConf*)&portConf)->path.c_str());
+					strcpy(serv_addr_unix->sun_path, ((TCPServer_UnixSocketConf*)&portConf)->path.c_str());
 					status = bind(listener, (struct sockaddr *) serv_addr_unix, sizeof(*serv_addr_unix));
 				}
 
@@ -353,7 +353,7 @@
 			{
 				client->address = string("unixsocket:")+string(((sockaddr_un*)cli_addr)->sun_path);
 
-				UnixSocketConf inputSocketInfo(((sockaddr_un*)cli_addr)->sun_path);
+				TCPServer_UnixSocketConf inputSocketInfo(((sockaddr_un*)cli_addr)->sun_path);
 				client->inputSocketInfo = inputSocketInfo;
 			}
 			else
@@ -361,7 +361,7 @@
 				inet_ntop(AF_INET, &((sockaddr_in*)cli_addr)->sin_addr, ip_str, 255);
 				client->address = string("ip:")+string(ip_str) + ":" + to_string(ntohs(((sockaddr_in*)cli_addr)->sin_port));
 
-				PortConf inputSocketInfo(ntohs(((sockaddr_in*)cli_addr)->sin_port), string(ip_str));
+				TCPServer_PortConf inputSocketInfo(ntohs(((sockaddr_in*)cli_addr)->sin_port), string(ip_str));
 				client->inputSocketInfo = inputSocketInfo;
 			}
 			delete[] ip_str;
@@ -498,14 +498,14 @@
 	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
 		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
-		auto startResult = this->startListen({ PortConf(port) });
+		auto startResult = this->startListen({ TCPServer_PortConf(port) });
 		startedWithSucess = startResult.startedPorts.size() > 0;
 	}
 
 	TCPServerLib::TCPServer::TCPServer(string unixsocketpath, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
 		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
-		auto startResult = this->startListen({ UnixSocketConf(unixsocketpath) });
+		auto startResult = this->startListen({ TCPServer_UnixSocketConf(unixsocketpath) });
 		startedWithSucess = startResult.startedPorts.size() > 0;
 		
 	}

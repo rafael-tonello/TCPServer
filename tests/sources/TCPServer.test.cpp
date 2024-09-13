@@ -11,7 +11,7 @@ void TCPServerTester::run(string context)
     if (context == "TCPServer")
     {
         TCPServerLib::TCPServer server;
-        server.startListen({ PortConf(5001), PortConf(5002)});
+        server.startListen({ TCPServer_PortConf(5001), TCPServer_PortConf(5002)});
 
         this->test("Should connect to the both ports", [&](){
 

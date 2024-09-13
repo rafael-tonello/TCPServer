@@ -72,23 +72,23 @@ namespace TCPServerLib
             void removeConEventListener(int id);
     };
 
-    class SocketInputConf { public:
+    class TCPServer_SocketInputConf { public:
         bool ssl_tls = false;
         string private_cert = "";
         string public_cert = "";
     };
 
-    class PortConf: public SocketInputConf{ public:
+    class TCPServer_PortConf: public TCPServer_SocketInputConf{ public:
         string ip;
         int port;
 
         //ip = "" means all interfaces
-        PortConf(int port, string ip=""): ip(ip), port(port){}
+        TCPServer_PortConf(int port, string ip=""): ip(ip), port(port){}
     };
 
-    class UnixSocketConf: public SocketInputConf{ public:
+    class TCPServer_UnixSocketConf: public TCPServer_SocketInputConf{ public:
         string path;
-        UnixSocketConf(string path): path(path){}
+        TCPServer_UnixSocketConf(string path): path(path){}
     };
 
     class ClientInfo: public SocketHelper{
@@ -102,7 +102,7 @@ namespace TCPServerLib
             TCPServer *server;
 
             string address;
-            SocketInputConf inputSocketInfo;
+            TCPServer_SocketInputConf inputSocketInfo;
             sockaddr cli_addr;
 
             void sendData(char* data, size_t size);
@@ -151,7 +151,7 @@ namespace TCPServerLib
             vector<thread*> listenThreads;
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
-            void waitClients(SocketInputConf portConf, function<void(bool sucess)> onStartingFinish);
+            void waitClients(TCPServer_SocketInputConf portConf, function<void(bool sucess)> onStartingFinish);
             void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
             bool __SocketIsConnected( int socket);
             bool SetSocketBlockingEnabled(int fd, bool blocking);
@@ -187,9 +187,9 @@ namespace TCPServerLib
             TCPServer();
             ~TCPServer();
 
-            struct startListen_Result{ vector<SocketInputConf> startedPorts; vector<SocketInputConf> failedPorts; };
+            struct startListen_Result{ vector<TCPServer_SocketInputConf> startedPorts; vector<TCPServer_SocketInputConf> failedPorts; };
             //star listen in the 'portConfs' ports/unix sockets. You can mix ports and unix sockets in the same call
-            startListen_Result startListen(vector<SocketInputConf> portConfs);
+            startListen_Result startListen(vector<TCPServer_SocketInputConf> portConfs);
 
             bool isConnected(ClientInfo *client);
 
