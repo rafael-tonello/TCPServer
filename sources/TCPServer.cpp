@@ -42,7 +42,13 @@
 #pragma endregion
 
 #pragma region TCPServer_SocketInputConf class
-	TCPServerLib::TCPServer_PortConf::TCPServer_PortConf(int port, string ip, bool enableSslTls, string privateCertificateFile, string publicCertificateFile)
+	TCPServerLib::TCPServer_PortConf::TCPServer_PortConf(
+		int port, 
+		string ip, 
+		bool enableSslTls, 
+		string privateCertificateFile, 
+		string publicCertificateFile)
+	: TCPServer_SocketInputConf(TCPServer_PortConf::TYPE_NUMBER)
 	{
 		this->port = port;
 		this->ip = ip;
@@ -51,7 +57,12 @@
 		this->public_cert = publicCertificateFile;
 	}
 
-	TCPServerLib::TCPServer_UnixSocketConf::TCPServer_UnixSocketConf(string path, bool enableSslTls, string privateCertificateFile, string publicCertificateFile)
+	TCPServerLib::TCPServer_UnixSocketConf::TCPServer_UnixSocketConf(
+		string path, 
+		bool enableSslTls, 
+		string privateCertificateFile, 
+		string publicCertificateFile)
+	: TCPServer_SocketInputConf(TCPServer_UnixSocketConf::TYPE_NUMBER)
 	{
 		this->path = path;
 		this->ssl_tls = enableSslTls;
@@ -103,7 +114,7 @@
 			//IMPORTANT: if disconnected, the 'client' must be destroyed here (or in the function that calls this function);
 		}
 
-		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<TCPServer_SocketInputConf> ports)
+		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<shared_ptr<TCPServer_SocketInputConf>> ports)
 		{
 			startListen_Result result;
 
@@ -116,7 +127,7 @@
 
 			for (auto &p: ports)
 			{
-				thread *th = new thread([&](TCPServer_SocketInputConf _p){
+				thread *th = new thread([&](shared_ptr<TCPServer_SocketInputConf> _p){
 					this->waitClients(_p, [&](bool sucess)
 					{ 
 						if (sucess)
@@ -141,9 +152,12 @@
 			return result;
 		}
 
-		void TCPServerLib::TCPServer::waitClients(TCPServer_SocketInputConf portConf, function<void(bool sucess)> onStartingFinish)
+		void TCPServerLib::TCPServer::waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(bool sucess)> onStartingFinish)
 		{
-			if (portConf.ssl_tls)
+			auto pcp0 = portConf.get();
+			TCPServer_PortConf *pcpp0 = (TCPServer_PortConf*)pcp0;
+
+			if (portConf->ssl_tls)
 				TCPServerLib::TCPServer::ssl_init();
 			//create an socket to await for connections
 
@@ -162,11 +176,16 @@
 			SSL_CTX *sslctx = NULL;
 			SSL *cSSL = NULL;
 
-
-			if (typeid(portConf) == typeid(TCPServer_PortConf) )
+			if (portConf->GetType() == TCPServer_PortConf::TYPE_NUMBER)
 				listener = socket(AF_INET, SOCK_STREAM, 0);
-			else
+			else if (portConf->GetType() == TCPServer_UnixSocketConf::TYPE_NUMBER)
 				listener = socket(AF_UNIX, SOCK_STREAM, 0);
+			else
+			{
+				this->debug("Invalid port configuration");
+				onStartingFinish(false);
+				return;
+			}
 
 			if (listener >= 0)
 			{
@@ -181,16 +200,16 @@
 				if (setsockopt(listener, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(int)))
 					this->debug("setsockopt(TCP_NODELAY) failed");
 
-				if (typeid(portConf) == typeid(TCPServer_PortConf) ) 
+				if (portConf->GetType() == TCPServer_PortConf::TYPE_NUMBER)
 				{
 					serv_addr->sin_family = AF_INET;
-					if (((TCPServer_PortConf*)&portConf)->ip == "")
+
+					if (((TCPServer_PortConf*)portConf.get())->ip == "")
 						serv_addr->sin_addr.s_addr = INADDR_ANY;
 					else
-						inet_pton(AF_INET, ((TCPServer_PortConf*)&portConf)->ip.c_str(), &serv_addr->sin_addr);
+						inet_pton(AF_INET, ((TCPServer_PortConf*)portConf.get())->ip.c_str(), &serv_addr->sin_addr);
 
-					//serv_addr->sin_addr.s_addr = INADDR_ANY;
-					serv_addr->sin_port = htons(((TCPServer_PortConf*)&portConf)->port);
+					serv_addr->sin_port = htons(((TCPServer_PortConf*)portConf.get())->port);
 					usleep(1000);
 					status = bind(listener, (struct sockaddr *) serv_addr, sizeof(*serv_addr));
 					usleep(1000);
@@ -198,7 +217,7 @@
 				else
 				{
 					serv_addr_unix->sun_family = AF_UNIX;
-					strcpy(serv_addr_unix->sun_path, ((TCPServer_UnixSocketConf*)&portConf)->path.c_str());
+					strcpy(serv_addr_unix->sun_path, ((TCPServer_UnixSocketConf*)portConf.get())->path.c_str());
 					status = bind(listener, (struct sockaddr *) serv_addr_unix, sizeof(*serv_addr_unix));
 				}
 
@@ -256,14 +275,14 @@
 												{
 													SetSocketBlockingEnabled(theSocket, false);
 
-													if (portConf.ssl_tls)
+													if (portConf->ssl_tls)
 													{
 														sslctx = SSL_CTX_new( SSLv23_server_method());
 														SSL_CTX_set_options(sslctx, SSL_OP_SINGLE_DH_USE);
 														
-														int use_cert = SSL_CTX_use_certificate_file(sslctx, portConf.public_cert.c_str() , SSL_FILETYPE_PEM);
+														int use_cert = SSL_CTX_use_certificate_file(sslctx, portConf->public_cert.c_str() , SSL_FILETYPE_PEM);
 
-														int use_prv = SSL_CTX_use_PrivateKey_file(sslctx, portConf.private_cert.c_str(), SSL_FILETYPE_PEM);
+														int use_prv = SSL_CTX_use_PrivateKey_file(sslctx, portConf->private_cert.c_str(), SSL_FILETYPE_PEM);
 
 														cSSL = SSL_new(sslctx);
 														SSL_set_fd(cSSL, theSocket);
@@ -281,7 +300,7 @@
 													event.events = EPOLLIN | EPOLLET;
 													auto tmpResult = epoll_ctl (efd, EPOLL_CTL_ADD, theSocket, &event);
 													if (tmpResult != -1)
-														clientSocketConnected(theSocket, cli_addr, portConf.ssl_tls, cSSL);
+														clientSocketConnected(theSocket, cli_addr, portConf->ssl_tls, cSSL);
 													else
 													{
 														this->debug("Client epoll_ctl error");
@@ -311,7 +330,7 @@
 											and won't get a notification again for the same
 											data. */
 
-											readDataFromClient(events[i].data.fd, portConf.ssl_tls, cSSL);
+											readDataFromClient(events[i].data.fd, portConf->ssl_tls, cSSL);
 										}
 									}
 								}
@@ -419,6 +438,7 @@
 		{
 			int bufferSize = _CONF_READ_BUFFER_SIZE;
 			char readBuffer[bufferSize]; //10k buffer
+			//char *readBuffer = new char[bufferSize];
 
 			bool done = false;
 			ssize_t count;
@@ -463,6 +483,8 @@
 			{
 				clientSocketDisconnected(socket);
 			}
+
+			//delete[] readBuffer;
 		}
 
 		
@@ -516,14 +538,14 @@
 	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
 		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
-		auto startResult = this->startListen({ TCPServer_PortConf(port) });
+		auto startResult = this->startListen({ shared_ptr<TCPServer_SocketInputConf>(new TCPServer_PortConf(port)) });
 		startedWithSucess = startResult.startedPorts.size() > 0;
 	}
 
 	TCPServerLib::TCPServer::TCPServer(string unixsocketpath, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
 	{
 		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
-		auto startResult = this->startListen({ TCPServer_UnixSocketConf(unixsocketpath) });
+		auto startResult = this->startListen({ shared_ptr<TCPServer_SocketInputConf>(new TCPServer_UnixSocketConf(unixsocketpath)) });
 		startedWithSucess = startResult.startedPorts.size() > 0;
 		
 	}
