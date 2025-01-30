@@ -128,12 +128,12 @@
 			for (auto &p: ports)
 			{
 				thread *th = new thread([&](shared_ptr<TCPServer_SocketInputConf> _p){
-					this->waitClients(_p, [&](bool sucess)
+					this->waitClients(_p, [&](string error)
 					{ 
-						if (sucess)
+						if (error == "")
 							result.startedPorts.push_back(_p);
 						else
-							result.failedPorts.push_back(_p);
+							result.failedPorts.push_back({_p, error});
 						numStarted++;
 					});
 				}, p);
@@ -152,7 +152,15 @@
 			return result;
 		}
 
-		void TCPServerLib::TCPServer::waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(bool sucess)> onStartingFinish)
+		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<int> tcpPorts)
+		{
+			vector<shared_ptr<TCPServer_SocketInputConf>> portConfs;
+			for (auto &p: tcpPorts)
+				portConfs.push_back(shared_ptr<TCPServer_SocketInputConf>(new TCPServer_PortConf(p)));
+			return this->startListen(portConfs);
+		}
+
+		void TCPServerLib::TCPServer::waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(string error)> onStartingFinish)
 		{
 			auto pcp0 = portConf.get();
 			TCPServer_PortConf *pcpp0 = (TCPServer_PortConf*)pcp0;
@@ -183,7 +191,7 @@
 			else
 			{
 				this->debug("Invalid port configuration");
-				onStartingFinish(false);
+				onStartingFinish("Invalid port configuration");
 				return;
 			}
 
@@ -238,7 +246,7 @@
 
 							if (epoll_ctl_result != -1)
 							{
-								onStartingFinish(true);
+								onStartingFinish("");
 
 								events = (struct epoll_event*)calloc (MAXEVENTS, sizeof event);
 
@@ -345,32 +353,32 @@
 							else
 							{
 								this->debug("Server socket epoll_ctl error");
-								onStartingFinish(false);
+								onStartingFinish("Server socket epoll_ctl error");
 
 							}
 						}
 						else
 						{
 							this->debug("Server socket epoll_create1 error");
-							onStartingFinish(false);
+							onStartingFinish("Server socket epoll_create1 error");
 						}
             		}
 					else
 					{
 						this->debug("Failure to open socket");
-						onStartingFinish(false);
+						onStartingFinish("Failure to open socket");
 					}
 				}
 				else
 				{
 					this->debug("Failure to start socket system");
-					onStartingFinish(false);
+					onStartingFinish("Failure to start socket system");
 				}
 			}
 			else
 			{
 				this->debug("General error opening socket");
-				onStartingFinish(false);
+				onStartingFinish("General error opening socket");
 			}
 		}
 

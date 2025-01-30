@@ -166,7 +166,7 @@ namespace TCPServerLib
             vector<thread*> listenThreads;
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
-            void waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(bool sucess)> onStartingFinish);
+            void waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(string error)> onStartingFinish);
             void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
             bool __SocketIsConnected( int socket);
             bool SetSocketBlockingEnabled(int fd, bool blocking);
@@ -202,9 +202,10 @@ namespace TCPServerLib
             TCPServer();
             ~TCPServer();
 
-            struct startListen_Result{ vector<shared_ptr<TCPServer_SocketInputConf>> startedPorts; vector<shared_ptr<TCPServer_SocketInputConf>> failedPorts; };
+            struct startListen_Result{ vector<shared_ptr<TCPServer_SocketInputConf>> startedPorts; vector<tuple<shared_ptr<TCPServer_SocketInputConf>, string>> failedPorts; };
             //star listen in the 'portConfs' ports/unix sockets. You can mix ports and unix sockets in the same call
             startListen_Result startListen(vector<shared_ptr<TCPServer_SocketInputConf>> portConfs);
+            startListen_Result startListen(vector<int> tcpPorts);
 
             bool isConnected(ClientInfo *client);
 
