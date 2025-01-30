@@ -205,7 +205,6 @@ namespace TCPServerLib
             struct startListen_Result{ vector<shared_ptr<TCPServer_SocketInputConf>> startedPorts; vector<tuple<shared_ptr<TCPServer_SocketInputConf>, string>> failedPorts; };
             //star listen in the 'portConfs' ports/unix sockets. You can mix ports and unix sockets in the same call
             startListen_Result startListen(vector<shared_ptr<TCPServer_SocketInputConf>> portConfs);
-            startListen_Result startListen(vector<int> tcpPorts);
 
             bool isConnected(ClientInfo *client);
 

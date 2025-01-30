@@ -152,14 +152,6 @@
 			return result;
 		}
 
-		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<int> tcpPorts)
-		{
-			vector<shared_ptr<TCPServer_SocketInputConf>> portConfs;
-			for (auto &p: tcpPorts)
-				portConfs.push_back(shared_ptr<TCPServer_SocketInputConf>(new TCPServer_PortConf(p)));
-			return this->startListen(portConfs);
-		}
-
 		void TCPServerLib::TCPServer::waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(string error)> onStartingFinish)
 		{
 			auto pcp0 = portConf.get();
