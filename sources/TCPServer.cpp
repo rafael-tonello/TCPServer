@@ -437,8 +437,8 @@
 		void TCPServerLib::TCPServer::readDataFromClient(int socket, bool usingSsl_tls, SSL* ssl_obj)
 		{
 			int bufferSize = _CONF_READ_BUFFER_SIZE;
-			char readBuffer[bufferSize]; //10k buffer
-			//char *readBuffer = new char[bufferSize];
+			//char readBuffer[bufferSize]; //10k buffer
+			char *readBuffer = new char[bufferSize];
 
 			bool done = false;
 			ssize_t count;
@@ -484,7 +484,7 @@
 				clientSocketDisconnected(socket);
 			}
 
-			//delete[] readBuffer;
+			delete[] readBuffer;
 		}
 
 		
