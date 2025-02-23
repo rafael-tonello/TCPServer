@@ -433,7 +433,6 @@
 				delete client;
 		}
 
-
 		void TCPServerLib::TCPServer::readDataFromClient(int socket, bool usingSsl_tls, SSL* ssl_obj)
 		{
 			int bufferSize = _CONF_READ_BUFFER_SIZE;
@@ -468,7 +467,8 @@
 				}
 				else if (count == 0)
 				{
-					this->debug("Error reading data from client");
+					//client may be disconnecting
+					//this->debug("Error reading data from client");
 					done = true;
 					break;
 				}
@@ -486,7 +486,6 @@
 
 			delete[] readBuffer;
 		}
-
 		
 		bool TCPServerLib::TCPServer::__SocketIsConnected(int socket)
 		{
@@ -529,6 +528,10 @@
     		EVP_cleanup();
 		}
 
+		void TCPServerLib::TCPServer::debug(string msg)
+		{
+			cout << "TCPServer library debug: " << msg << endl;
+		}
 
 	#pragma endregion
 
@@ -688,6 +691,10 @@
 		#endif
 	}
 
+	void TCPServerLib::TCPServer::enableDebug(bool debugEnabled)
+	{
+		this->debugMode = debugEnabled;
+	}
 
 	#pragma endregion
 #pragma endregion

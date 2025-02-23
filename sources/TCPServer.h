@@ -164,10 +164,13 @@ namespace TCPServerLib
             map<int, ClientInfo*> connectedClients;
             std::mutex connectClientsMutext;
             vector<thread*> listenThreads;
+
+            bool debugMode = false;
+
             void notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size);
             void notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action);
             void waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(string error)> onStartingFinish);
-            void debug(string msg){cout << "TCPServer library debug: " << msg << endl;}
+            void debug(string msg);
             bool __SocketIsConnected( int socket);
             bool SetSocketBlockingEnabled(int fd, bool blocking);
 
@@ -223,6 +226,8 @@ namespace TCPServerLib
             //send data to 'clientList' or all connected clients. Receives a string.
             //If clienList is NULL, all connected clients will receive the data
             void sendBroadcast(string data, vector<ClientInfo*> *clientList = NULL);
+
+            void enableDebug(bool debugEnabled);
 
     };
 }
