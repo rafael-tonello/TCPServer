@@ -1,21 +1,21 @@
 #include "TCPServer.h"
 
 #pragma region SocketHelper class
-	int TCPServerLib::SocketHelper::addReceiveListener(function<void(ClientInfo *client, char* data,  size_t size)> onReceive)
+	int TCPServerLib::SocketHelper::addReceiveListener(function<void(shared_ptr<ClientInfo> client, char* data,  size_t size)> onReceive)
 	{
 		int id = listenersIdCounter++;
 		this->receiveListeners[id] = onReceive;
 		return id;
 	}
 
-	int TCPServerLib::SocketHelper::addReceiveListener_s(function<void(ClientInfo *client, string data)> onReceive)
+	int TCPServerLib::SocketHelper::addReceiveListener_s(function<void(shared_ptr<ClientInfo> client, string data)> onReceive)
 	{
 		int id = listenersIdCounter++;
 		this->receiveListeners_s[id] = onReceive;
 		return id;
 	}
 
-	int TCPServerLib::SocketHelper::addConEventListener(function<void(ClientInfo *client, CONN_EVENT event)> onConEvent)
+	int TCPServerLib::SocketHelper::addConEventListener(function<void(shared_ptr<ClientInfo> client, CONN_EVENT event)> onConEvent)
 	{
 		int id = listenersIdCounter++;
 		this->connEventsListeners[id] = onConEvent;
@@ -72,7 +72,7 @@
 
 #pragma region TCPServer class
 	#pragma region private functions
-		void TCPServerLib::TCPServer::notifyListeners_dataReceived(ClientInfo *client, char* data, size_t size)
+		void TCPServerLib::TCPServer::notifyListeners_dataReceived(shared_ptr<ClientInfo> client, char* data, size_t size)
 		{
 			string dataAsString = "";
 			if ((this->receiveListeners_s.size() > 0) || (client->___getReceiveListeners_sSize() > 0))
@@ -101,7 +101,7 @@
 			dataAsString = "";
 		}
 
-		void TCPServerLib::TCPServer::notifyListeners_connEvent(ClientInfo *client, CONN_EVENT action)
+		void TCPServerLib::TCPServer::notifyListeners_connEvent(shared_ptr<ClientInfo> client, CONN_EVENT action)
 		{
 			//notify the events in the TCPServer
 			for (auto &c: this->connEventsListeners)
@@ -378,7 +378,7 @@
 		{
 			
 			//creat ea new client
-			ClientInfo *client = new ClientInfo();
+			shared_ptr<ClientInfo> client = shared_ptr<ClientInfo>(new ClientInfo());
 			client->socketHandle = theSocket;
 			client->server = this;
 			client->socket = theSocket;
@@ -422,15 +422,13 @@
 				return;
 			}
 
-			ClientInfo *client = connectedClients[theSocket];
+			shared_ptr<ClientInfo> client = connectedClients[theSocket];
 
+			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
 			connectClientsMutext.lock();
 			this->connectedClients.erase(theSocket);
 			connectClientsMutext.unlock();
 
-			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
-			if (deleteClientesAfterDisconnection)
-				delete client;
 		}
 
 		void TCPServerLib::TCPServer::readDataFromClient(int socket, bool usingSsl_tls, SSL* ssl_obj)
@@ -461,7 +459,7 @@
 						return;
 					}
 
-					ClientInfo *client = connectedClients[socket];
+					shared_ptr<ClientInfo> client = connectedClients[socket];
 			
 					this->notifyListeners_dataReceived(client, readBuffer, count);
 				}
@@ -538,24 +536,17 @@
 	#pragma region public functions
 
 
-	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
+	TCPServerLib::TCPServer::TCPServer(int port, bool &startedWithSucess)
 	{
-		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
 		auto startResult = this->startListen({ shared_ptr<TCPServer_SocketInputConf>(new TCPServer_PortConf(port)) });
 		startedWithSucess = startResult.startedPorts.size() > 0;
 	}
 
-	TCPServerLib::TCPServer::TCPServer(string unixsocketpath, bool &startedWithSucess, bool AutomaticallyDeleteClientesAfterDisconnection)
-	{
-		this->deleteClientesAfterDisconnection = AutomaticallyDeleteClientesAfterDisconnection;
+	TCPServerLib::TCPServer::TCPServer(string unixsocketpath, bool &startedWithSucess)
+	{  
 		auto startResult = this->startListen({ shared_ptr<TCPServer_SocketInputConf>(new TCPServer_UnixSocketConf(unixsocketpath)) });
 		startedWithSucess = startResult.startedPorts.size() > 0;
 		
-	}
-
-	TCPServerLib::TCPServer::TCPServer(bool autoDeleteClientsAfterDisconnection)
-	{
-		this->deleteClientesAfterDisconnection = autoDeleteClientsAfterDisconnection;
 	}
 
 	TCPServerLib::TCPServer::TCPServer()
@@ -566,16 +557,16 @@
 	TCPServerLib::TCPServer::~TCPServer()
 	{
 		this->running = false;
+		usleep(100000); //wait 100ms to the threads finish their work
 		if (sslWasInited)
 		{
-			usleep(10000); //needs to wati the sockets shutdown
+			//usleep(10000); //needs to wati the sockets shutdown
 			ssl_stop();
 		}
 	}
 
-	void TCPServerLib::TCPServer::sendData(ClientInfo *client, char* data, size_t size)
+	void TCPServerLib::TCPServer::sendData(shared_ptr<ClientInfo> client, char* data, size_t size)
 	{
-
 		client->writeMutex.lock();
 		connectClientsMutext.lock();
 
@@ -603,75 +594,53 @@
 		client->writeMutex.unlock();
 	}
 
-	void TCPServerLib::TCPServer::sendString(ClientInfo *client, string data)
+	void TCPServerLib::TCPServer::sendString(shared_ptr<ClientInfo> client, string data)
 	{
 		this->sendData(client, (char*)data.c_str(), data.size());
 	}
 
-	void TCPServerLib::TCPServer::sendBroadcast(char* data, size_t size, vector<ClientInfo*> *clientList)
+	void TCPServerLib::TCPServer::sendBroadcast(char* data, size_t size, vector<shared_ptr<ClientInfo>> clientList)
 	{
-		bool clearList = false;
-		if (clientList == NULL)
+		if (clientList.size() == 0)
 		{
-			vector<ClientInfo*> temp;
 			connectClientsMutext.lock();
 			for (auto &c: this->connectedClients)   
-				temp.push_back(c.second);
+				clientList.push_back(c.second);
 			connectClientsMutext.unlock();
-
-			clientList = &temp;
-			clearList = true;
 		}
 
-		for (int c = 0; c < clientList->size(); c++)
-			(*clientList)[c]->sendData(data, size);
-
-		if (clearList)
-		{
-			(*clientList).clear();
-			delete clientList;
-		}
-
+		for (auto &c: clientList)
+			c->sendData(data, size);
 	}
 
-	void TCPServerLib::TCPServer::sendBroadcast(string data, vector<ClientInfo*> *clientList)
+	void TCPServerLib::TCPServer::sendBroadcast(string data, vector<shared_ptr<ClientInfo>> clientList)
 	{
 		this->sendBroadcast((char*)(data.c_str()), data.size(), clientList);
 	}
 
-	void TCPServerLib::TCPServer::disconnect(ClientInfo *client)
+	void TCPServerLib::TCPServer::disconnect(shared_ptr<ClientInfo> client)
 	{
 		close(client->socket);
 		//the observer are notified in TCPServer::the clientsCheckLoop method
 	}
 
-	void TCPServerLib::TCPServer::disconnectAll(vector<ClientInfo*> *clientList)
+	void TCPServerLib::TCPServer::disconnectAll(vector<shared_ptr<ClientInfo>> clientList)
 	{
-		bool clearList = false;
-		if (clientList == NULL)
+		if (clientList.size() == 0)
 		{
-			vector<ClientInfo*> temp;
 			connectClientsMutext.lock();
 			for (auto &c: this->connectedClients)   
-				temp.push_back(c.second);
+				clientList.push_back(c.second);
 			connectClientsMutext.unlock();
-			clientList = &temp;
-			clearList = true;
 		}
 
-		for (int c = 0; c < clientList->size(); c++)
+		for (auto c : clientList)
 		{
-			this->disconnect((*clientList)[c]);
-		}
-
-		if (clearList)
-		{
-			(*clientList).clear();
-			delete clientList;
+			this->disconnect(c);
 		}
 	}
 
-	bool TCPServerLib::TCPServer::isConnected(ClientInfo *client)
+	bool TCPServerLib::TCPServer::isConnected(shared_ptr<ClientInfo> client)
 	{
 		return this->__SocketIsConnected(client->socket);
 	}
@@ -703,23 +672,23 @@
 
 	void TCPServerLib::ClientInfo::sendData(char* data, size_t size)
 	{
-		this->server->sendData(this, data, size);
+		this->server->sendData(shared_from_this(), data, size);
 		
 	}
 
 	void TCPServerLib::ClientInfo::sendString(string data)
 	{
-		this->server->sendString(this, data);
+		this->server->sendString(shared_from_this(), data);
 	}
 
 	bool TCPServerLib::ClientInfo::isConnected()
 	{
-		return this->server->isConnected(this);
+		return this->server->isConnected(shared_from_this());
 	}
 
 	void TCPServerLib::ClientInfo::disconnect()
 	{
-		this->server->disconnect(this);
+		this->server->disconnect(shared_from_this());
 	}
 
 	void TCPServerLib::ClientInfo::___notifyListeners_dataReceived(char* data, size_t size, string dataAsStr)
@@ -727,12 +696,12 @@
 		//notify the events in the TCPServer
 		for (auto &c: this->receiveListeners)
 		{
-			c.second(this, data, size);
+			c.second(shared_from_this(), data, size);
 		}
 
 		for (auto &c: this->receiveListeners_s)
 		{
-			c.second(this, dataAsStr);
+			c.second(shared_from_this(), dataAsStr);
 		}
 
 	}
@@ -741,7 +710,7 @@
 	{
 		for (auto &c: this->connEventsListeners)
 		{
-			c.second(this, action);
+			c.second(shared_from_this(), action);
 		}
 	}
 
@@ -749,11 +718,5 @@
 	{
 		return this->receiveListeners_s.size();
 	}
-
-	
-
-	
-
-
 
 #pragma endregion
