@@ -85,6 +85,8 @@ namespace TCPServerLib
 
         TCPServer_SocketInputConf(int type): type(type){};
 
+        virtual string ToString() = 0;
+
     
         int GetType(){ return type; };
 
@@ -94,6 +96,8 @@ namespace TCPServerLib
         static const int TYPE_NUMBER = 1;
         string ip;
         int port;
+
+        string ToString() override;
 
 
 
@@ -105,6 +109,7 @@ namespace TCPServerLib
         static const int TYPE_NUMBER = 2;
         string path;
         TCPServer_UnixSocketConf(string path, bool enableSslTls = false, string privateCertificateFile="", string publicCertificateFile="");
+        string ToString();
     };
 
     class ClientInfo: public SocketHelper, public std::enable_shared_from_this<ClientInfo>{
@@ -169,6 +174,8 @@ namespace TCPServerLib
             vector<thread*> listenThreads;
             
             bool debugMode = false;
+
+            
 
             void notifyListeners_dataReceived(shared_ptr<ClientInfo> client, char* data, size_t size);
             void notifyListeners_connEvent(shared_ptr<ClientInfo> client, CONN_EVENT action);

@@ -57,6 +57,11 @@
 		this->public_cert = publicCertificateFile;
 	}
 
+	string TCPServerLib::TCPServer_PortConf::ToString()
+	{
+		return "PortConf(ip=" + this->ip + ", port=" + std::to_string(this->port) + ", ssl_tls=" + (this->ssl_tls ? "true" : "false") + ")";
+	}
+
 	TCPServerLib::TCPServer_UnixSocketConf::TCPServer_UnixSocketConf(
 		string path, 
 		bool enableSslTls, 
@@ -70,6 +75,10 @@
 		this->public_cert = publicCertificateFile;
 	}
 
+	string TCPServerLib::TCPServer_UnixSocketConf::ToString()
+	{
+		return "UnixSocketConf(path=" + this->path + ", ssl_tls=" + (this->ssl_tls ? "true" : "false") + ")";
+	}
 #pragma region TCPServer class
 	#pragma region private functions
 		void TCPServerLib::TCPServer::notifyListeners_dataReceived(shared_ptr<ClientInfo> client, char* data, size_t size)
@@ -116,13 +125,12 @@
 
 		TCPServerLib::TCPServer::startListen_Result TCPServerLib::TCPServer::startListen(vector<shared_ptr<TCPServer_SocketInputConf>> ports)
 		{
-			startListen_Result result;
-
+			startListen_Result result{};
 			this->running = true;
 			this->nextLoopWait = _CONF_DEFAULT_LOOP_WAIT;
 			this->connectedClients.clear();
 
-			atomic<int> numStarted;
+			atomic<int> numStarted = 0;
 			numStarted = 0;
 
 			for (auto &p: ports)
@@ -131,9 +139,16 @@
 					this->waitClients(_p, [&](string error)
 					{ 
 						if (error == "")
+						{
+							cout << "adding things to result" << endl;
 							result.startedPorts.push_back(_p);
+							cout << "after adding things to result, the amount of items is " << result.startedPorts.size() << endl;
+						}
 						else
+						{
+							cerr << "Failed to start port " << _p->ToString() << ", error: " << error << endl;
 							result.failedPorts.push_back({_p, error});
+						}
 						numStarted++;
 					});
 				}, p);
@@ -148,343 +163,271 @@
 			//wait for sockets initialization
 			while (numStarted < ports.size())
 				usleep(100);
-
 			return result;
 		}
 
-		void TCPServerLib::TCPServer::waitClients(shared_ptr<TCPServer_SocketInputConf> portConf, function<void(string error)> onStartingFinish)
+		void TCPServerLib::TCPServer::waitClients(
+			std::shared_ptr<TCPServer_SocketInputConf> portConf,
+			std::function<void(std::string error)> onStartingFinish)
 		{
-			auto pcp0 = portConf.get();
-			TCPServer_PortConf *pcpp0 = (TCPServer_PortConf*)pcp0;
-
 			if (portConf->ssl_tls)
 				TCPServerLib::TCPServer::ssl_init();
-			//create an socket to await for connections
 
-			int listener, efd, epoll_ctl_result, foundEvents;
-			int MAXEVENTS = 128;
+			int listener, efd;
+			const int MAXEVENTS = 128;
 
-			struct sockaddr_in *serv_addr = new sockaddr_in();
-			struct sockaddr_un *serv_addr_unix = new sockaddr_un();
-			struct sockaddr *cli_addr = new sockaddr();
-			struct epoll_event event;
-  			struct epoll_event *events;
+			sockaddr_in serv_addr{};
+			sockaddr_un serv_addr_unix{};
+			sockaddr_storage cli_addr{};
+			socklen_t clientSize = sizeof(cli_addr);
+
+			epoll_event event;
+			epoll_event* events = nullptr;
 			int status;
-			socklen_t clientSize = sizeof(cli_addr);;
-			char *ip_str;
-
-			SSL_CTX *sslctx = NULL;
-			SSL *cSSL = NULL;
 
 			if (portConf->GetType() == TCPServer_PortConf::TYPE_NUMBER)
 				listener = socket(AF_INET, SOCK_STREAM, 0);
 			else if (portConf->GetType() == TCPServer_UnixSocketConf::TYPE_NUMBER)
 				listener = socket(AF_UNIX, SOCK_STREAM, 0);
-			else
-			{
+			else {
 				this->debug("Invalid port configuration");
 				onStartingFinish("Invalid port configuration");
 				return;
 			}
 
-			if (listener >= 0)
-			{
-				//reuse address
-				int reuse = 1;
-
-				if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(int)) < 0)
-					this->debug("setsockopt(SO_REUSEADDR) failed");
-
-				//no delay (disable Nagle's algorithm)
-				int value = 1;
-				if (setsockopt(listener, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(int)))
-					this->debug("setsockopt(TCP_NODELAY) failed");
-
-				if (portConf->GetType() == TCPServer_PortConf::TYPE_NUMBER)
-				{
-					serv_addr->sin_family = AF_INET;
-
-					if (((TCPServer_PortConf*)portConf.get())->ip == "")
-						serv_addr->sin_addr.s_addr = INADDR_ANY;
-					else
-						inet_pton(AF_INET, ((TCPServer_PortConf*)portConf.get())->ip.c_str(), &serv_addr->sin_addr);
-
-					serv_addr->sin_port = htons(((TCPServer_PortConf*)portConf.get())->port);
-					usleep(1000);
-					status = bind(listener, (struct sockaddr *) serv_addr, sizeof(*serv_addr));
-					usleep(1000);
-				}
-				else
-				{
-					serv_addr_unix->sun_family = AF_UNIX;
-					strcpy(serv_addr_unix->sun_path, ((TCPServer_UnixSocketConf*)portConf.get())->path.c_str());
-					status = bind(listener, (struct sockaddr *) serv_addr_unix, sizeof(*serv_addr_unix));
-				}
-
-				if (status >= 0)
-				{
-					SetSocketBlockingEnabled(listener, false);
-					status = listen(listener, 5);
-					if (status >= 0)
-					{
-
-						efd = epoll_create1 (0);
-						if (efd != -1)
-						{
-							event.data.fd = listener;
-  							event.events = EPOLLIN | EPOLLET;
-							
-							epoll_ctl_result = epoll_ctl (efd, EPOLL_CTL_ADD, listener, &event);
-
-							if (epoll_ctl_result != -1)
-							{
-								onStartingFinish("");
-
-								events = (struct epoll_event*)calloc (MAXEVENTS, sizeof event);
-
-								while (true)
-								{
-									event.data.fd = listener;
-  									event.events = EPOLLIN | EPOLLET;
-											
-											
-									foundEvents = epoll_wait (efd, events, MAXEVENTS, 1000);
-
-									
-      								for (auto i = 0; i < foundEvents; i++)
-									{
-										if ((events[i].events & EPOLLERR) ||
-												(events[i].events & EPOLLHUP) ||
-												(!(events[i].events & EPOLLIN)))
-										{
-											/* An error has occured on this fd, or the socket is not
-												ready for reading (why were we notified then?) */
-											fprintf (stderr, "epoll error\n");
-											close (events[i].data.fd);
-											continue;
-										}
-										else if (listener == events[i].data.fd)
-										{
-											/* We have a notification on the listening socket, which
-												means one or more incoming connections. */
-											while (1)
-											{
-												int theSocket = accept(listener, (struct sockaddr *) cli_addr, &clientSize);
-
-												if (theSocket >= 0)
-												{
-													SetSocketBlockingEnabled(theSocket, false);
-
-													if (portConf->ssl_tls)
-													{
-														sslctx = SSL_CTX_new( SSLv23_server_method());
-														SSL_CTX_set_options(sslctx, SSL_OP_SINGLE_DH_USE);
-														
-														int use_cert = SSL_CTX_use_certificate_file(sslctx, portConf->public_cert.c_str() , SSL_FILETYPE_PEM);
-
-														int use_prv = SSL_CTX_use_PrivateKey_file(sslctx, portConf->private_cert.c_str(), SSL_FILETYPE_PEM);
-
-														cSSL = SSL_new(sslctx);
-														SSL_set_fd(cSSL, theSocket);
-														//Here is the SSL Accept portion.  Now all reads and writes must use SSL
-														auto ssl_err = SSL_accept(cSSL);
-														if(ssl_err <= 0)
-														{
-															//Error occurred, log and close down ssl
-															//ShutdownSSL();
-														}
-													}
-
-
-													event.data.fd = theSocket;
-													event.events = EPOLLIN | EPOLLET;
-													auto tmpResult = epoll_ctl (efd, EPOLL_CTL_ADD, theSocket, &event);
-													if (tmpResult != -1)
-														clientSocketConnected(theSocket, cli_addr, portConf->ssl_tls, cSSL);
-													else
-													{
-														this->debug("Client epoll_ctl error");
-													}
-												}
-												else if (theSocket == -1)
-												{
-													if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
-													{
-													/* We have processed all incoming
-														connections. */
-														break;
-													}
-													//else
-													//{
-													//	perror ("accept");
-													break;
-												}
-											}
-										}
-										else
-										{
-
-											/* We have data on the fd waiting to be read. Read and
-                 							display it. We must read whatever data is available
-											completely, as we are running in edge-triggered mode
-											and won't get a notification again for the same
-											data. */
-
-											readDataFromClient(events[i].data.fd, portConf->ssl_tls, cSSL);
-										}
-									}
-								}
-								
-								SSL_shutdown(cSSL);
-    							SSL_free(cSSL);
-
-
-								free (events);
-								close (listener);
-							}
-							else
-							{
-								this->debug("Server socket epoll_ctl error");
-								onStartingFinish("Server socket epoll_ctl error");
-
-							}
-						}
-						else
-						{
-							this->debug("Server socket epoll_create1 error");
-							onStartingFinish("Server socket epoll_create1 error");
-						}
-            		}
-					else
-					{
-						this->debug("Failure to open socket");
-						onStartingFinish("Failure to open socket");
-					}
-				}
-				else
-				{
-					this->debug("Failure to start socket system");
-					onStartingFinish("Failure to start socket system");
-				}
-			}
-			else
-			{
+			if (listener < 0) {
 				this->debug("General error opening socket");
 				onStartingFinish("General error opening socket");
+				return;
 			}
+
+			int reuse = 1;
+			setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+			int value = 1;
+			setsockopt(listener, IPPROTO_TCP, TCP_NODELAY, &value, sizeof(value));
+
+			if (portConf->GetType() == TCPServer_PortConf::TYPE_NUMBER) {
+				serv_addr.sin_family = AF_INET;
+
+				if (((TCPServer_PortConf*)portConf.get())->ip.empty())
+					serv_addr.sin_addr.s_addr = INADDR_ANY;
+				else
+					inet_pton(AF_INET, ((TCPServer_PortConf*)portConf.get())->ip.c_str(),
+							&serv_addr.sin_addr);
+
+				serv_addr.sin_port = htons(((TCPServer_PortConf*)portConf.get())->port);
+				status = bind(listener, (sockaddr*)&serv_addr, sizeof(serv_addr));
+			} else {
+				serv_addr_unix.sun_family = AF_UNIX;
+				strncpy(serv_addr_unix.sun_path,
+						((TCPServer_UnixSocketConf*)portConf.get())->path.c_str(),
+						sizeof(serv_addr_unix.sun_path) - 1);
+				status = bind(listener, (sockaddr*)&serv_addr_unix,
+							sizeof(serv_addr_unix));
+			}
+
+			if (status < 0) {
+				this->debug("Failure to start socket system");
+				onStartingFinish("Failure to start socket system");
+				close(listener);
+				return;
+			}
+
+			SetSocketBlockingEnabled(listener, false);
+
+			if (listen(listener, 5) < 0) {
+				this->debug("Failure to open socket");
+				onStartingFinish("Failure to open socket");
+				close(listener);
+				return;
+			}
+
+			efd = epoll_create1(0);
+			if (efd == -1) {
+				this->debug("Server socket epoll_create1 error");
+				onStartingFinish("Server socket epoll_create1 error");
+				close(listener);
+				return;
+			}
+
+			event.data.fd = listener;
+			event.events = EPOLLIN | EPOLLET;
+
+			if (epoll_ctl(efd, EPOLL_CTL_ADD, listener, &event) == -1) {
+				this->debug("Server socket epoll_ctl error");
+				onStartingFinish("Server socket epoll_ctl error");
+				close(listener);
+				close(efd);
+				return;
+			}
+
+			onStartingFinish("");
+
+			events = (epoll_event*)calloc(MAXEVENTS, sizeof(event));
+
+			while (true) {
+				int foundEvents = epoll_wait(efd, events, MAXEVENTS, 1000);
+
+				for (int i = 0; i < foundEvents; i++) {
+					if ((events[i].events & (EPOLLERR | EPOLLHUP)) ||
+						!(events[i].events & EPOLLIN)) {
+						this->debug("epoll error");
+						close(events[i].data.fd);
+						continue;
+					} else if (listener == events[i].data.fd) {
+						// Accept new clients
+						while (true) {
+							int theSocket =
+								accept(listener, (sockaddr*)&cli_addr, &clientSize);
+
+							if (theSocket < 0) {
+								if (errno == EAGAIN || errno == EWOULDBLOCK)
+									break;
+								else
+									break;
+							}
+
+							SetSocketBlockingEnabled(theSocket, false);
+
+							SSL* cSSL = nullptr;
+							if (portConf->ssl_tls) {
+								SSL_CTX* sslctx = SSL_CTX_new(SSLv23_server_method());
+								SSL_CTX_set_options(sslctx, SSL_OP_SINGLE_DH_USE);
+								SSL_CTX_use_certificate_file(sslctx,
+															portConf->public_cert.c_str(),
+															SSL_FILETYPE_PEM);
+								SSL_CTX_use_PrivateKey_file(sslctx,
+															portConf->private_cert.c_str(),
+															SSL_FILETYPE_PEM);
+								cSSL = SSL_new(sslctx);
+								SSL_set_fd(cSSL, theSocket);
+								if (SSL_accept(cSSL) <= 0) {
+									SSL_free(cSSL);
+									close(theSocket);
+									continue;
+								}
+							}
+
+							event.data.fd = theSocket;
+							event.events = EPOLLIN | EPOLLET;
+							if (epoll_ctl(efd, EPOLL_CTL_ADD, theSocket, &event) != -1) {
+								clientSocketConnected(theSocket, (sockaddr*)&cli_addr,
+													portConf->ssl_tls, cSSL);
+							} else {
+								this->debug("Client epoll_ctl error");
+								if (cSSL) SSL_free(cSSL);
+								close(theSocket);
+							}
+						}
+					} else {
+						// Data from client
+						readDataFromClient(events[i].data.fd, portConf->ssl_tls, nullptr);
+					}
+				}
+			}
+
+			free(events);
+			close(listener);
+			close(efd);
 		}
 
-		void TCPServerLib::TCPServer::clientSocketConnected(int theSocket, struct sockaddr *cli_addr, bool sslTls, SSL* ssl)
+		void TCPServerLib::TCPServer::clientSocketConnected(
+			int theSocket, struct sockaddr* cli_addr, bool sslTls, SSL* ssl)
 		{
-			
-			//creat ea new client
-			shared_ptr<ClientInfo> client = shared_ptr<ClientInfo>(new ClientInfo());
+			auto client = std::make_shared<ClientInfo>();
 			client->socketHandle = theSocket;
 			client->server = this;
 			client->socket = theSocket;
 			client->sslTlsEnabled = sslTls;
 			client->cSsl = ssl;
-			char *ip_str = new char[255];
-			//check if cli_addr is a sockaddr_in or sockaddr_un
-			if (cli_addr->sa_family == AF_UNIX)
-			{
-				client->address = string("unixsocket:")+string(((sockaddr_un*)cli_addr)->sun_path);
 
-				TCPServer_UnixSocketConf inputSocketInfo(((sockaddr_un*)cli_addr)->sun_path);
+			char ip_str[INET6_ADDRSTRLEN] = {0};
+			if (cli_addr->sa_family == AF_UNIX) {
+				client->address =
+					std::string("unixsocket:") + ((sockaddr_un*)cli_addr)->sun_path;
+				TCPServer_UnixSocketConf inputSocketInfo(
+					((sockaddr_un*)cli_addr)->sun_path);
+				client->inputSocketInfo = inputSocketInfo;
+			} else {
+				inet_ntop(AF_INET, &((sockaddr_in*)cli_addr)->sin_addr, ip_str,
+						sizeof(ip_str));
+				client->address = std::string("ip:") + ip_str + ":" +
+								std::to_string(ntohs(((sockaddr_in*)cli_addr)->sin_port));
+				TCPServer_PortConf inputSocketInfo(
+					ntohs(((sockaddr_in*)cli_addr)->sin_port), std::string(ip_str));
 				client->inputSocketInfo = inputSocketInfo;
 			}
-			else
-			{
-				inet_ntop(AF_INET, &((sockaddr_in*)cli_addr)->sin_addr, ip_str, 255);
-				client->address = string("ip:")+string(ip_str) + ":" + to_string(ntohs(((sockaddr_in*)cli_addr)->sin_port));
 
-				TCPServer_PortConf inputSocketInfo(ntohs(((sockaddr_in*)cli_addr)->sin_port), string(ip_str));
-				client->inputSocketInfo = inputSocketInfo;
-			}
-			delete[] ip_str;
-			
 			client->inputSocketInfo.ssl_tls = sslTls;
 			client->cli_addr = *cli_addr;
 
-			connectClientsMutext.lock();
-			this->connectedClients[theSocket] = client;
-			connectClientsMutext.unlock();
+			{
+				std::lock_guard<std::mutex> lk(connectClientsMutext);
+				connectedClients[theSocket] = client;
+			}
+
 			this->notifyListeners_connEvent(client, CONN_EVENT::CONNECTED);
 		}
 
 		void TCPServerLib::TCPServer::clientSocketDisconnected(int theSocket)
 		{
-			close (theSocket);
-			if (connectedClients.count(theSocket) == 0)
+			close(theSocket);
+
+			std::shared_ptr<ClientInfo> client;
 			{
-				this->debug("Detect a disconnection of a not connected client!");
-				//clientSocketConnected(theSocket);
-				return;
+				std::lock_guard<std::mutex> lk(connectClientsMutext);
+				auto it = connectedClients.find(theSocket);
+				if (it == connectedClients.end()) {
+					this->debug("Detect a disconnection of a not connected client!");
+					return;
+				}
+				client = it->second;
+				connectedClients.erase(it);
 			}
 
-			shared_ptr<ClientInfo> client = connectedClients[theSocket];
-
 			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
-			connectClientsMutext.lock();
-			this->connectedClients.erase(theSocket);
-			connectClientsMutext.unlock();
-
 		}
 
-		void TCPServerLib::TCPServer::readDataFromClient(int socket, bool usingSsl_tls, SSL* ssl_obj)
+		void TCPServerLib::TCPServer::readDataFromClient(int socket, bool usingSsl_tls,
+														SSL* ssl_obj)
 		{
-			int bufferSize = _CONF_READ_BUFFER_SIZE;
-			//char readBuffer[bufferSize]; //10k buffer
-			char *readBuffer = new char[bufferSize];
-
+			const int bufferSize = _CONF_READ_BUFFER_SIZE;
+			char* readBuffer = new char[bufferSize];
 			bool done = false;
-			ssize_t count;
 
+			while (__SocketIsConnected(socket)) {
+				ssize_t count = usingSsl_tls ? SSL_read(ssl_obj, readBuffer, bufferSize)
+											: read(socket, readBuffer, bufferSize);
 
-			while (__SocketIsConnected(socket))
-			{
-
-				if (usingSsl_tls)
-					count = SSL_read (ssl_obj, readBuffer, sizeof readBuffer);
-				else
-					count = read (socket, readBuffer, sizeof readBuffer);
-				//count = recv(socket,readBuffer, sizeof readBuffer, 0);
-				if (count > 0)
-				{
-						
-					if (connectedClients.count(socket) == 0)
+				if (count > 0) {
+					std::shared_ptr<ClientInfo> client;
 					{
-						this->debug("reading data from a not connect client!");
-						//clientSocketConnected(socket);
-						return;
+						std::lock_guard<std::mutex> lk(connectClientsMutext);
+						if (connectedClients.count(socket) == 0) {
+							this->debug("reading data from a not connected client!");
+							delete[] readBuffer;
+							return;
+						}
+						client = connectedClients[socket];
 					}
-
-					shared_ptr<ClientInfo> client = connectedClients[socket];
-			
 					this->notifyListeners_dataReceived(client, readBuffer, count);
-				}
-				else if (count == 0)
-				{
-					//client may be disconnecting
-					//this->debug("Error reading data from client");
+				} else if (count == 0) {
 					done = true;
 					break;
-				}
-				else{
-					if (errno != EAGAIN)
+				} else {
+					if (errno != EAGAIN && errno != EWOULDBLOCK)
 						done = true;
 					break;
 				}
 			}
-			
-			if (done ||  connectedClients.count(socket)== 0 || !isConnected(connectedClients[socket]))
-			{
+
+			if (done) {
 				clientSocketDisconnected(socket);
 			}
 
 			delete[] readBuffer;
 		}
-		
+
 		bool TCPServerLib::TCPServer::__SocketIsConnected(int socket)
 		{
 			char data;
