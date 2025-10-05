@@ -85,7 +85,7 @@ namespace TCPServerLib
 
         TCPServer_SocketInputConf(int type): type(type){};
 
-        virtual string ToString() = 0;
+        virtual string ToString(){ return ""; };
 
     
         int GetType(){ return type; };
@@ -123,7 +123,7 @@ namespace TCPServerLib
             TCPServer *server;
 
             string address = "";
-            TCPServer_SocketInputConf inputSocketInfo = TCPServer_SocketInputConf(0);
+            TCPServer_SocketInputConf *inputSocketInfo;
             sockaddr cli_addr;
 
             void sendData(char* data, size_t size);

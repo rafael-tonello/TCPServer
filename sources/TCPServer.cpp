@@ -57,7 +57,7 @@
 		this->public_cert = publicCertificateFile;
 	}
 
-	string TCPServerLib::TCPServer_PortConf::ToString()
+	std::string TCPServerLib::TCPServer_PortConf::ToString()
 	{
 		return "PortConf(ip=" + this->ip + ", port=" + std::to_string(this->port) + ", ssl_tls=" + (this->ssl_tls ? "true" : "false") + ")";
 	}
@@ -75,7 +75,7 @@
 		this->public_cert = publicCertificateFile;
 	}
 
-	string TCPServerLib::TCPServer_UnixSocketConf::ToString()
+	std::string TCPServerLib::TCPServer_UnixSocketConf::ToString()
 	{
 		return "UnixSocketConf(path=" + this->path + ", ssl_tls=" + (this->ssl_tls ? "true" : "false") + ")";
 	}
@@ -347,7 +347,7 @@
 					std::string("unixsocket:") + ((sockaddr_un*)cli_addr)->sun_path;
 				TCPServer_UnixSocketConf inputSocketInfo(
 					((sockaddr_un*)cli_addr)->sun_path);
-				client->inputSocketInfo = inputSocketInfo;
+				client->inputSocketInfo = &inputSocketInfo;
 			} else {
 				inet_ntop(AF_INET, &((sockaddr_in*)cli_addr)->sin_addr, ip_str,
 						sizeof(ip_str));
@@ -355,10 +355,10 @@
 								std::to_string(ntohs(((sockaddr_in*)cli_addr)->sin_port));
 				TCPServer_PortConf inputSocketInfo(
 					ntohs(((sockaddr_in*)cli_addr)->sin_port), std::string(ip_str));
-				client->inputSocketInfo = inputSocketInfo;
+				client->inputSocketInfo = &inputSocketInfo;
 			}
 
-			client->inputSocketInfo.ssl_tls = sslTls;
+			client->inputSocketInfo->ssl_tls = sslTls;
 			client->cli_addr = *cli_addr;
 
 			{
