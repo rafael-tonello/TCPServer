@@ -508,33 +508,46 @@
 		}
 	}
 
-	void TCPServerLib::TCPServer::sendData(shared_ptr<ClientInfo> client, char* data, size_t size)
+	void TCPServerLib::TCPServer::sendData(std::shared_ptr<ClientInfo> client, char* data, size_t size)
 	{
-		client->writeMutex.lock();
-		connectClientsMutext.lock();
+		// uses unique_lock to make sure the mutex is released when the function ends
+		std::unique_lock<std::mutex> lockWrite(client->writeMutex);
+		std::unique_lock<std::mutex> lockClients(connectClientsMutext);
 
-		if (connectedClients.count(client->socket) > 0)
-		{
-			if (__SocketIsConnected(client->socket))
-			{
-				if (client->sslTlsEnabled)
-					SSL_write(client->cSsl, data, size);
-				else
-					send(client->socket, data, size, 0);
-			}
-			else{
-				//client is disconnected, but it disconnection was not detected before. If it happens, the lib heave a bug! :D
-				//so, make de disconectio nprocess here
-				cerr << "Try sendind data to disconnected client." << endl;
-				connectClientsMutext.unlock();
+		// Verifica se o cliente ainda está na lista de conectados
+		if (connectedClients.count(client->socket) == 0) {
+			std::cerr << "[TCPServer] sendData: tentativa de envio para cliente desconhecido (socket "
+					<< client->socket << ")" << std::endl;
+			return;
+		}
+
+		if (!__SocketIsConnected(client->socket)) {
+			std::cerr << "[TCPServer] sendData: cliente desconectado detectado no envio (socket "
+					<< client->socket << ")" << std::endl;
+			clientSocketDisconnected(client->socket);
+			return;
+		}
+
+		if (client->sslTlsEnabled) {
+			int ret = SSL_write(client->cSsl, data, static_cast<int>(size));
+			if (ret <= 0) {
+				int sslErr = SSL_get_error(client->cSsl, ret);
+				std::cerr << "[TCPServer] sendData: SSL_write falhou no socket "
+						<< client->socket << " (ssl_error=" << sslErr << ")" << std::endl;
 				clientSocketDisconnected(client->socket);
 			}
+		} else {
+			ssize_t sent = send(client->socket, data, size, MSG_NOSIGNAL);
+			if (sent < 0) {
+				int err = errno;
+				std::cerr << "[TCPServer] sendData: erro ao enviar para socket "
+						<< client->socket << " (" << strerror(err) << ")" << std::endl;
+
+				if (err == EPIPE || err == ECONNRESET) {
+					clientSocketDisconnected(client->socket);
+				}
+			}
 		}
-		else
-			cerr << "Try sendind data to unknown client" << endl;
-		connectClientsMutext.unlock();
-		
-		client->writeMutex.unlock();
 	}
 
 	void TCPServerLib::TCPServer::sendString(shared_ptr<ClientInfo> client, string data)
