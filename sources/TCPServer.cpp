@@ -362,8 +362,9 @@
 			client->cli_addr = *cli_addr;
 
 			{
-				std::lock_guard<std::mutex> lk(connectClientsMutext);
+				connectClientsMutext.lock();
 				connectedClients[theSocket] = client;
+				connectClientsMutext.unlock();
 			}
 
 			this->notifyListeners_connEvent(client, CONN_EVENT::CONNECTED);
@@ -375,14 +376,16 @@
 
 			std::shared_ptr<ClientInfo> client;
 			{
-				std::lock_guard<std::mutex> lk(connectClientsMutext);
+				connectClientsMutext.lock();
 				auto it = connectedClients.find(theSocket);
 				if (it == connectedClients.end()) {
 					this->debug("Detect a disconnection of a not connected client!");
+					connectClientsMutext.unlock();
 					return;
 				}
 				client = it->second;
 				connectedClients.erase(it);
+				connectClientsMutext.unlock();
 			}
 
 			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
@@ -402,13 +405,15 @@
 				if (count > 0) {
 					std::shared_ptr<ClientInfo> client;
 					{
-						std::lock_guard<std::mutex> lk(connectClientsMutext);
+						connectClientsMutext.lock();
 						if (connectedClients.count(socket) == 0) {
 							this->debug("reading data from a not connected client!");
 							delete[] readBuffer;
+							connectClientsMutext.unlock();
 							return;
 						}
 						client = connectedClients[socket];
+						connectClientsMutext.unlock();
 					}
 					this->notifyListeners_dataReceived(client, readBuffer, count);
 				} else if (count == 0) {
@@ -512,14 +517,17 @@
 	{
 		// uses unique_lock to make sure the mutex is released when the function ends
 		std::unique_lock<std::mutex> lockWrite(client->writeMutex);
-		std::unique_lock<std::mutex> lockClients(connectClientsMutext);
+		connectClientsMutext.lock();
 
 		// Verifica se o cliente ainda está na lista de conectados
 		if (connectedClients.count(client->socket) == 0) {
+			connectClientsMutext.unlock();
 			std::cerr << "[TCPServer] sendData: tentativa de envio para cliente desconhecido (socket "
 					<< client->socket << ")" << std::endl;
+				
 			return;
 		}
+		connectClientsMutext.unlock();
 
 		if (!__SocketIsConnected(client->socket)) {
 			std::cerr << "[TCPServer] sendData: cliente desconectado detectado no envio (socket "
