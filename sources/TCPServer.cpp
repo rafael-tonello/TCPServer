@@ -130,7 +130,7 @@
 			this->nextLoopWait = _CONF_DEFAULT_LOOP_WAIT;
 			this->connectedClients.clear();
 
-			atomic<int> numStarted = 0;
+			atomic<szie_t> numStarted = 0;
 			numStarted = 0;
 
 			for (auto &p: ports)
