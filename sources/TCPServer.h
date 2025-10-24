@@ -16,6 +16,7 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <cstring>
 #pragma region include for networking
     #include <sys/types.h>
     #include <fcntl.h>
@@ -123,7 +124,7 @@ namespace TCPServerLib
             TCPServer *server;
 
             string address = "";
-            TCPServer_SocketInputConf *inputSocketInfo;
+            std::shared_ptr<TCPServer_SocketInputConf> inputSocketInfo;
             sockaddr cli_addr;
 
             void sendData(char* data, size_t size);

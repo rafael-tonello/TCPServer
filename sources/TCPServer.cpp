@@ -332,7 +332,10 @@
 		}
 
 		void TCPServerLib::TCPServer::clientSocketConnected(
-			int theSocket, struct sockaddr* cli_addr, bool sslTls, SSL* ssl)
+			int theSocket,
+			struct sockaddr* cli_addr,
+			bool sslTls,
+			SSL* ssl)
 		{
 			auto client = std::make_shared<ClientInfo>();
 			client->socketHandle = theSocket;
@@ -342,31 +345,52 @@
 			client->cSsl = ssl;
 
 			char ip_str[INET6_ADDRSTRLEN] = {0};
+
 			if (cli_addr->sa_family == AF_UNIX) {
-				client->address =
-					std::string("unixsocket:") + ((sockaddr_un*)cli_addr)->sun_path;
-				TCPServer_UnixSocketConf inputSocketInfo(
-					((sockaddr_un*)cli_addr)->sun_path);
-				client->inputSocketInfo = &inputSocketInfo;
-			} else {
-				inet_ntop(AF_INET, &((sockaddr_in*)cli_addr)->sin_addr, ip_str,
-						sizeof(ip_str));
-				client->address = std::string("ip:") + ip_str + ":" +
-								std::to_string(ntohs(((sockaddr_in*)cli_addr)->sin_port));
-				TCPServer_PortConf inputSocketInfo(
-					ntohs(((sockaddr_in*)cli_addr)->sin_port), std::string(ip_str));
-				client->inputSocketInfo = &inputSocketInfo;
+				// Conexão via Unix socket
+				auto sun = reinterpret_cast<sockaddr_un*>(cli_addr);
+				client->address = "unixsocket:" + std::string(sun->sun_path);
+				client->inputSocketInfo = std::make_shared<TCPServer_UnixSocketConf>(sun->sun_path);
+			} 
+			else if (cli_addr->sa_family == AF_INET) {
+				// Conexão via IPv4
+				auto sin = reinterpret_cast<sockaddr_in*>(cli_addr);
+				inet_ntop(AF_INET, &sin->sin_addr, ip_str, sizeof(ip_str));
+
+				uint16_t port = ntohs(sin->sin_port);
+				client->address = "ip:" + std::string(ip_str) + ":" + std::to_string(port);
+				client->inputSocketInfo = std::make_shared<TCPServer_PortConf>(port, std::string(ip_str));
+			}
+		#ifdef AF_INET6
+			else if (cli_addr->sa_family == AF_INET6) {
+				// Conexão via IPv6 (opcional, mas útil)
+				auto sin6 = reinterpret_cast<sockaddr_in6*>(cli_addr);
+				inet_ntop(AF_INET6, &sin6->sin6_addr, ip_str, sizeof(ip_str));
+
+				uint16_t port = ntohs(sin6->sin6_port);
+				client->address = "ip6:" + std::string(ip_str) + ":" + std::to_string(port);
+				client->inputSocketInfo = std::make_shared<TCPServer_PortConf>(port, std::string(ip_str));
+			}
+		#endif
+			else {
+				// Tipo de endereço não suportado
+				client->address = "unknown";
+				client->inputSocketInfo = std::make_shared<TCPServer_PortConf>(0, "unknown");
 			}
 
+			// Ajuste de configuração SSL/TLS
 			client->inputSocketInfo->ssl_tls = sslTls;
-			client->cli_addr = *cli_addr;
 
+			// Cópia segura da estrutura sockaddr (não apenas o ponteiro!)
+			std::memcpy(&client->cli_addr, cli_addr, sizeof(sockaddr_storage));
+
+			// Inserção segura no mapa de clientes
 			{
-				connectClientsMutext.lock();
+				std::lock_guard<std::mutex> lk(connectClientsMutext);
 				connectedClients[theSocket] = client;
-				connectClientsMutext.unlock();
 			}
 
+			// Notifica os listeners do evento de conexão
 			this->notifyListeners_connEvent(client, CONN_EVENT::CONNECTED);
 		}
 
