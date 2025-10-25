@@ -1,4 +1,5 @@
 #include "TCPServer.h"
+#include <algorithm> // added for std::min
 
 #pragma region SocketHelper class
 	int TCPServerLib::SocketHelper::addReceiveListener(function<void(shared_ptr<ClientInfo> client, char* data,  size_t size)> onReceive)
@@ -133,16 +134,19 @@
 			atomic<size_t> numStarted = 0;
 			numStarted = 0;
 
+			std::mutex resultMutex; // protect result multi-threaded writes
+
 			for (auto &p: ports)
 			{
-				thread *th = new thread([&](shared_ptr<TCPServer_SocketInputConf> _p){
+				// Capture port by value and resultMutex by reference to avoid data races on loop variable
+				thread *th = new thread([this, &result, &numStarted, &resultMutex](shared_ptr<TCPServer_SocketInputConf> _p){
 					this->waitClients(_p, [&](string error)
 					{ 
+						// synchronize modifications to result
+						std::lock_guard<std::mutex> lg(resultMutex);
 						if (error == "")
 						{
-							cout << "adding things to result" << endl;
 							result.startedPorts.push_back(_p);
-							cout << "after adding things to result, the amount of items is " << result.startedPorts.size() << endl;
 						}
 						else
 						{
@@ -153,13 +157,10 @@
 					});
 				}, p);
 
-				th->detach();
-				
+				// Do not detach threads: we'll join them in destructor. Store pointers for later join.
 				this->listenThreads.push_back(th);
 			}
 
-
-			
 			//wait for sockets initialization
 			while (numStarted < ports.size())
 				usleep(100);
@@ -263,20 +264,52 @@
 				return;
 			}
 
+			// create SSL_CTX once per listening socket (if TLS enabled)
+			SSL_CTX* sslctx = nullptr;
+			if (portConf->ssl_tls) {
+				sslctx = SSL_CTX_new(SSLv23_server_method());
+				if (!sslctx) {
+					this->debug("Failed to create SSL_CTX");
+					onStartingFinish("Failed to create SSL_CTX");
+					close(listener);
+					close(efd);
+					return;
+				}
+				SSL_CTX_set_options(sslctx, SSL_OP_SINGLE_DH_USE);
+				if (SSL_CTX_use_certificate_file(sslctx, portConf->public_cert.c_str(), SSL_FILETYPE_PEM) != 1) {
+					this->debug("Failed to load public certificate");
+					onStartingFinish("Failed to load public certificate");
+					SSL_CTX_free(sslctx);
+					close(listener);
+					close(efd);
+					return;
+				}
+				if (SSL_CTX_use_PrivateKey_file(sslctx, portConf->private_cert.c_str(), SSL_FILETYPE_PEM) != 1) {
+					this->debug("Failed to load private key");
+					onStartingFinish("Failed to load private key");
+					SSL_CTX_free(sslctx);
+					close(listener);
+					close(efd);
+					return;
+				}
+			}
+
 			onStartingFinish("");
 
-			events = (epoll_event*)calloc(MAXEVENTS, sizeof(event));
+			// allocate events using RAII
+			std::unique_ptr<epoll_event[]> eventsArr(new epoll_event[MAXEVENTS]);
 
-			while (true) {
-				int foundEvents = epoll_wait(efd, events, MAXEVENTS, 1000);
+			// loop while server running
+			while (this->running) {
+				int foundEvents = epoll_wait(efd, eventsArr.get(), MAXEVENTS, 1000);
 
 				for (int i = 0; i < foundEvents; i++) {
-					if ((events[i].events & (EPOLLERR | EPOLLHUP)) ||
-						!(events[i].events & EPOLLIN)) {
+					if ((eventsArr[i].events & (EPOLLERR | EPOLLHUP)) ||
+						!(eventsArr[i].events & EPOLLIN)) {
 						this->debug("epoll error");
-						close(events[i].data.fd);
+						close(eventsArr[i].data.fd);
 						continue;
-					} else if (listener == events[i].data.fd) {
+					} else if (listener == eventsArr[i].data.fd) {
 						// Accept new clients
 						while (true) {
 							int theSocket =
@@ -293,15 +326,12 @@
 
 							SSL* cSSL = nullptr;
 							if (portConf->ssl_tls) {
-								SSL_CTX* sslctx = SSL_CTX_new(SSLv23_server_method());
-								SSL_CTX_set_options(sslctx, SSL_OP_SINGLE_DH_USE);
-								SSL_CTX_use_certificate_file(sslctx,
-															portConf->public_cert.c_str(),
-															SSL_FILETYPE_PEM);
-								SSL_CTX_use_PrivateKey_file(sslctx,
-															portConf->private_cert.c_str(),
-															SSL_FILETYPE_PEM);
+								// use sslctx created above
 								cSSL = SSL_new(sslctx);
+								if (!cSSL) {
+									close(theSocket);
+									continue;
+								}
 								SSL_set_fd(cSSL, theSocket);
 								if (SSL_accept(cSSL) <= 0) {
 									SSL_free(cSSL);
@@ -310,13 +340,13 @@
 								}
 							}
 
-							struct epoll_event event;
-							std::memset(&event, 0, sizeof(event));
+							struct epoll_event ev;
+							std::memset(&ev, 0, sizeof(ev));
 
-							event.data.fd = theSocket;
-							event.events = EPOLLIN | EPOLLET;
+							ev.data.fd = theSocket;
+							ev.events = EPOLLIN | EPOLLET;
 
-							if (epoll_ctl(efd, EPOLL_CTL_ADD, theSocket, &event) != -1) {
+							if (epoll_ctl(efd, EPOLL_CTL_ADD, theSocket, &ev) != -1) {
 								clientSocketConnected(theSocket, (sockaddr*)&cli_addr,
 													portConf->ssl_tls, cSSL);
 							} else {
@@ -327,12 +357,15 @@
 						}
 					} else {
 						// Data from client
-						readDataFromClient(events[i].data.fd, portConf->ssl_tls, nullptr);
+						readDataFromClient(eventsArr[i].data.fd, portConf->ssl_tls, nullptr);
 					}
 				}
 			}
 
-			free(events);
+			// cleanup
+			if (sslctx) {
+				SSL_CTX_free(sslctx);
+			}
 			close(listener);
 			close(efd);
 		}
@@ -387,7 +420,7 @@
 			// Ajuste de configuração SSL/TLS
 			client->inputSocketInfo->ssl_tls = sslTls;
 
-			// Cópia segura da estrutura sockaddr
+			// Cópia segura da estrutura sockaddr (limit to sizeof(sockaddr) to avoid overflow of client->cli_addr)
 			std::memset(&client->cli_addr, 0, sizeof(client->cli_addr));
 
 			size_t addr_len = 0;
@@ -400,7 +433,9 @@
 				default:       addr_len = sizeof(sockaddr);     break;
 			}
 
-			std::memcpy(&client->cli_addr, cli_addr, addr_len);
+			// copy only up to sizeof(sockaddr) to avoid overflow of ClientInfo::cli_addr
+			size_t copy_len = std::min(addr_len, sizeof(client->cli_addr));
+			std::memcpy(&client->cli_addr, cli_addr, copy_len);
 
 			// Inserção segura no mapa de clientes
 			{
@@ -418,16 +453,20 @@
 
 			std::shared_ptr<ClientInfo> client;
 			{
-				connectClientsMutext.lock();
+				std::lock_guard<std::mutex> lk(connectClientsMutext);
 				auto it = connectedClients.find(theSocket);
 				if (it == connectedClients.end()) {
 					this->debug("Detect a disconnection of a not connected client!");
-					connectClientsMutext.unlock();
 					return;
 				}
 				client = it->second;
 				connectedClients.erase(it);
-				connectClientsMutext.unlock();
+			}
+
+			// free SSL object if present
+			if (client && client->cSsl) {
+				SSL_free(client->cSsl);
+				client->cSsl = nullptr;
 			}
 
 			this->notifyListeners_connEvent(client, CONN_EVENT::DISCONNECTED);
@@ -437,27 +476,24 @@
 														SSL* ssl_obj)
 		{
 			const int bufferSize = _CONF_READ_BUFFER_SIZE;
-			char* readBuffer = new char[bufferSize];
+			std::vector<char> readBuffer(bufferSize);
 			bool done = false;
 
 			while (__SocketIsConnected(socket)) {
-				ssize_t count = usingSsl_tls ? SSL_read(ssl_obj, readBuffer, bufferSize)
-											: read(socket, readBuffer, bufferSize);
+				ssize_t count = usingSsl_tls ? SSL_read(ssl_obj, readBuffer.data(), bufferSize)
+											: read(socket, readBuffer.data(), bufferSize);
 
 				if (count > 0) {
 					std::shared_ptr<ClientInfo> client;
 					{
-						connectClientsMutext.lock();
+						std::lock_guard<std::mutex> lk(connectClientsMutext);
 						if (connectedClients.count(socket) == 0) {
 							this->debug("reading data from a not connected client!");
-							delete[] readBuffer;
-							connectClientsMutext.unlock();
 							return;
 						}
 						client = connectedClients[socket];
-						connectClientsMutext.unlock();
 					}
-					this->notifyListeners_dataReceived(client, readBuffer, count);
+					this->notifyListeners_dataReceived(client, readBuffer.data(), count);
 				} else if (count == 0) {
 					done = true;
 					break;
@@ -471,25 +507,14 @@
 			if (done) {
 				clientSocketDisconnected(socket);
 			}
-
-			delete[] readBuffer;
 		}
 
 		bool TCPServerLib::TCPServer::__SocketIsConnected(int socket)
 		{
-			char data;
-			int readed = recv(socket,&data,1, MSG_PEEK | MSG_DONTWAIT);//read one byte (but not consume this)
-
 			int error_code;
 			socklen_t error_code_size = sizeof(error_code);
 			auto getsockoptRet = getsockopt(socket, SOL_SOCKET, SO_ERROR, &error_code, &error_code_size);
-			//string desc(strerror(error_code));
-			//return error_code == 0;
 
-
-			//in the ser of "'TCPCLientLib", after tests, I received 0 in the var 'readed' when server closes the connection and error_code is always 0, wheter or not connected to the server
-			//in the case of "TCPServerLib", the error_code works fine
-			
 			if (getsockoptRet < 0) {
 				return false;
 			} else if (error_code == 0) {
@@ -518,7 +543,8 @@
 
 		void TCPServerLib::TCPServer::debug(string msg)
 		{
-			cout << "TCPServer library debug: " << msg << endl;
+			if (this->debugMode)
+				cout << "TCPServer library debug: " << msg << endl;
 		}
 
 	#pragma endregion
@@ -548,9 +574,23 @@
 	{
 		this->running = false;
 		usleep(100000); //wait 100ms to the threads finish their work
+
+		// join listen threads
+		for (auto thPtr : listenThreads) {
+			if (thPtr) {
+				try {
+					if (thPtr->joinable())
+						thPtr->join();
+				} catch (...) {
+					// swallow exceptions during destructor
+				}
+				delete thPtr;
+			}
+		}
+		listenThreads.clear();
+
 		if (sslWasInited)
 		{
-			//usleep(10000); //needs to wati the sockets shutdown
 			ssl_stop();
 		}
 	}
@@ -559,30 +599,22 @@
 	{
 		// uses unique_lock to make sure the mutex is released when the function ends
 		std::unique_lock<std::mutex> lockWrite(client->writeMutex);
-		connectClientsMutext.lock();
 
-		// Verifica se o cliente ainda está na lista de conectados
-		if (connectedClients.count(client->socket) == 0) {
-			connectClientsMutext.unlock();
-			std::cerr << "[TCPServer] sendData: tentativa de envio para cliente desconhecido (socket "
-					<< client->socket << ")" << std::endl;
-				
-			return;
-		}
-		connectClientsMutext.unlock();
-
-		if (!__SocketIsConnected(client->socket)) {
-			std::cerr << "[TCPServer] sendData: cliente desconectado detectado no envio (socket "
-					<< client->socket << ")" << std::endl;
-			clientSocketDisconnected(client->socket);
-			return;
+		{
+			std::lock_guard<std::mutex> lk(connectClientsMutext);
+			// Verifica se o cliente ainda está na lista de conectados
+			if (connectedClients.count(client->socket) == 0) {
+				std::cerr << "[TCPServer] sendData: fail sending to unknown client (socket "
+						<< client->socket << ")" << std::endl;
+				return;
+			}
 		}
 
 		if (client->sslTlsEnabled) {
 			int ret = SSL_write(client->cSsl, data, static_cast<int>(size));
 			if (ret <= 0) {
 				int sslErr = SSL_get_error(client->cSsl, ret);
-				std::cerr << "[TCPServer] sendData: SSL_write falhou no socket "
+				std::cerr << "[TCPServer] sendData: SSL_write faiiled for socket "
 						<< client->socket << " (ssl_error=" << sslErr << ")" << std::endl;
 				clientSocketDisconnected(client->socket);
 			}
@@ -590,7 +622,7 @@
 			ssize_t sent = send(client->socket, data, size, MSG_NOSIGNAL);
 			if (sent < 0) {
 				int err = errno;
-				std::cerr << "[TCPServer] sendData: erro ao enviar para socket "
+				std::cerr << "[TCPServer] sendData: error sending to socket "
 						<< client->socket << " (" << strerror(err) << ")" << std::endl;
 
 				if (err == EPIPE || err == ECONNRESET) {
@@ -609,10 +641,9 @@
 	{
 		if (clientList.size() == 0)
 		{
-			connectClientsMutext.lock();
-			for (auto &c: this->connectedClients)   
+			std::lock_guard<std::mutex> lk(connectClientsMutext);
+			for (auto &c: this->connectedClients)
 				clientList.push_back(c.second);
-			connectClientsMutext.unlock();
 		}
 
 		for (auto &c: clientList)
@@ -634,10 +665,9 @@
 	{
 		if (clientList.size() == 0)
 		{
-			connectClientsMutext.lock();
+			std::lock_guard<std::mutex> lk(connectClientsMutext);
 			for (auto &c: this->connectedClients)   
 				clientList.push_back(c.second);
-			connectClientsMutext.unlock();
 		}
 
 		for (auto c : clientList)

@@ -35,6 +35,7 @@
     #include <openssl/err.h>
     #include <netinet/tcp.h>
 #include <memory>
+#include <algorithm> // added for std::min
 #pragma endregion
 
 namespace TCPServerLib
