@@ -250,6 +250,9 @@
 				return;
 			}
 
+			struct epoll_event event;
+			std::memset(&event, 0, sizeof(event));  // Zera toda a struct
+
 			event.data.fd = listener;
 			event.events = EPOLLIN | EPOLLET;
 
@@ -308,8 +311,12 @@
 								}
 							}
 
+							struct epoll_event event;
+							std::memset(&event, 0, sizeof(event));
+
 							event.data.fd = theSocket;
 							event.events = EPOLLIN | EPOLLET;
+
 							if (epoll_ctl(efd, EPOLL_CTL_ADD, theSocket, &event) != -1) {
 								clientSocketConnected(theSocket, (sockaddr*)&cli_addr,
 													portConf->ssl_tls, cSSL);
