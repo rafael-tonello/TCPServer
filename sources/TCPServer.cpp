@@ -181,7 +181,6 @@
 			sockaddr_storage cli_addr{};
 			socklen_t clientSize = sizeof(cli_addr);
 
-			epoll_event event;
 			epoll_event* events = nullptr;
 			int status;
 
