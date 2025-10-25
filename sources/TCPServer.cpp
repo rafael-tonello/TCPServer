@@ -351,7 +351,7 @@
 				auto sun = reinterpret_cast<sockaddr_un*>(cli_addr);
 				client->address = "unixsocket:" + std::string(sun->sun_path);
 				client->inputSocketInfo = std::make_shared<TCPServer_UnixSocketConf>(sun->sun_path);
-			} 
+			}
 			else if (cli_addr->sa_family == AF_INET) {
 				// Conexão via IPv4
 				auto sin = reinterpret_cast<sockaddr_in*>(cli_addr);
@@ -363,7 +363,7 @@
 			}
 		#ifdef AF_INET6
 			else if (cli_addr->sa_family == AF_INET6) {
-				// Conexão via IPv6 (opcional, mas útil)
+				// Conexão via IPv6
 				auto sin6 = reinterpret_cast<sockaddr_in6*>(cli_addr);
 				inet_ntop(AF_INET6, &sin6->sin6_addr, ip_str, sizeof(ip_str));
 
@@ -381,8 +381,20 @@
 			// Ajuste de configuração SSL/TLS
 			client->inputSocketInfo->ssl_tls = sslTls;
 
-			// Cópia segura da estrutura sockaddr (não apenas o ponteiro!)
-			std::memcpy(&client->cli_addr, cli_addr, sizeof(sockaddr_storage));
+			// Cópia segura da estrutura sockaddr
+			std::memset(&client->cli_addr, 0, sizeof(client->cli_addr));
+
+			size_t addr_len = 0;
+			switch (cli_addr->sa_family) {
+				case AF_UNIX:  addr_len = sizeof(sockaddr_un);  break;
+				case AF_INET:  addr_len = sizeof(sockaddr_in);  break;
+		#ifdef AF_INET6
+				case AF_INET6: addr_len = sizeof(sockaddr_in6); break;
+		#endif
+				default:       addr_len = sizeof(sockaddr);     break;
+			}
+
+			std::memcpy(&client->cli_addr, cli_addr, addr_len);
 
 			// Inserção segura no mapa de clientes
 			{
